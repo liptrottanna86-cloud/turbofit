@@ -276,7 +276,11 @@ def do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,save=False,
     # Individual element grid?
     nels = len(abundances)
 
-    welem = np.array(wrange)
+    welem = np.array(wrange, dtype=float)
+    if segments is not None:
+        # continuous opacities must cover every segment
+        segs = np.array(segments, dtype=float)
+        welem = np.array([min(welem.min(), segs.min() - 1.0), max(welem.max(), segs.max() + 1.0)])
     # Only compute opacities for a single nominal abundance
     if babsma is None:
         fout = open(root+'_babsma.csh','w')

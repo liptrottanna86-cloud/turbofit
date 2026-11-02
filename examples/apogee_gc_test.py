@@ -52,11 +52,20 @@ ALLVISIT = D + '/allVisit-dr17-synspec_rev1.fits'
 APSTAR = D + '/stars/{telescope}/{field}/apStar-dr17-{apogee_id}.fits'   # filled by 'download'
 SAS_URL = 'https://data.sdss.org/sas/dr17/apogee/spectro/redux/dr17/stars/{telescope}/{field}/apStar-dr17-{apogee_id}.fits'
 
-# LSF / wavelength-solution files per telescope (directory, lsfid, waveid)
+# DR17 LSF and wavelength-solution IDs (cal/lsf, cal/wave). Each visit gets
+# the most recent LSF taken on or before its MJD; the star's LSF is the
+# average over its visits (as the apStar spectrum combines them).
 LSF_DIR = os.environ.get('APOGEE_LSF_DIR', BASE + '/apogee_dr17/lsf')
-LSF = {
-    'apo25m': dict(datadir=LSF_DIR, lsfid='05440020', waveid='02420038'),
-    'lco25m': dict(datadir=LSF_DIR, lsfid=None, waveid=None),   # set if you use LCO stars
+LSF_IDS = {
+    'apo25m': ('ap', ['03430016', '07510018', '11130063', '14600018', '18430026',
+                      '22330043', '25560065', '28860055', '32900046']),
+    'lco25m': ('as', ['22670019', '22940020', '26990075', '29380037', '32690044',
+                      '36210017']),
+}
+WAVE_IDS = {
+    'apo25m': ['02380000', '05680000', '09500000', '13140000', '16680000',
+               '20380000', '24040000', '27980000', '31380000'],
+    'lco25m': ['22670000', '24040000', '27980000', '31380000', '33880000'],
 }
 FIBRES = 'visits'          # 'visits' (fibres of the star's visits) or 'combo'
 
@@ -139,19 +148,18 @@ def load_members():
 _VISITS = None
 
 
-def visit_fibres(apogee_id, telescope):
+def star_visits(apogee_id, telescope):
+    """(fibre, mjd) of every visit of this star from this telescope."""
     global _VISITS
-    if FIBRES == 'combo':
-        return 'combo'
     if _VISITS is None:                       # read allVisit once, three columns only
         with fits.open(ALLVISIT, memmap=True) as h:
             d = h[1].data
             _VISITS = Table(dict(APOGEE_ID=_str(d['APOGEE_ID']), TELESCOPE=_str(d['TELESCOPE']),
-                                 FIBERID=np.asarray(d['FIBERID'])))
+                                 FIBERID=np.asarray(d['FIBERID']),
+                                 MJD=np.asarray(d['MJD'])))
     v = _VISITS
-    ok =(_str(v['APOGEE_ID']) == apogee_id) & (_str(v['TELESCOPE']) == telescope)
-    fib = sorted({int(f) for f in np.asarray(v['FIBERID'])[ok] if 1 <= int(f) <= 300})
-    return fib or 'combo'
+    ok = (v['APOGEE_ID'] == apogee_id) & (v['TELESCOPE'] == telescope)
+    return [(int(f), int(m)) for f, m in zip(v['FIBERID'][ok], v['MJD'][ok])]
 
 # =====================================================================
 # spectra
@@ -192,13 +200,43 @@ def download(sel):
             print('FAILED', row['APOGEE_ID'], repr(e))
 
 
+def _id_mjd(i):
+    return int(i[:4]) + 55562            # APOGEE IDs: first 4 digits = MJD - 55562
+
+
+def _pick(ids, mjd):
+    """Most recent ID on or before mjd (else the earliest)."""
+    before = [i for i in ids if _id_mjd(i) <= mjd]
+    return max(before, key=_id_mjd) if before else min(ids, key=_id_mjd)
+
+
+_LSF_CACHE = {}
+
+
 def instrument(row, wave):
     tel = row['TELESCOPE'].strip()
-    cfg = LSF[tel]
-    if cfg.get('lsfid') is None:
-        raise ValueError(f'set LSF[{tel!r}] lsfid/waveid in CONFIG')
-    lsf = apogee_lsf.ApogeeLSF(**cfg)
-    return lsf.inst(wave, fiber=visit_fibres(row['APOGEE_ID'], tel))
+    prefix, lsf_ids = LSF_IDS[tel]
+    visits = star_visits(row['APOGEE_ID'], tel)
+    if not visits:
+        raise ValueError(f"no visits for {row['APOGEE_ID']} in allVisit")
+    # group visits by the (LSF, wave) calibration they get
+    groups = {}
+    for fib, mjd in visits:
+        key = (_pick(lsf_ids, mjd), _pick(WAVE_IDS[tel], mjd))
+        groups.setdefault(key, []).append(fib)
+    lsf_sum, x, n = 0.0, None, 0
+    for (lid, wid), fibs in groups.items():
+        if (lid, wid) not in _LSF_CACHE:
+            _LSF_CACHE[(lid, wid)] = apogee_lsf.ApogeeLSF(LSF_DIR, lsfid=lid, waveid=wid,
+                                                          prefix=prefix)
+        fib = 'combo' if FIBRES == 'combo' else [f for f in fibs if 1 <= f <= 300] or 'combo'
+        lsf, x = _LSF_CACHE[(lid, wid)].lsf_array(wave, fiber=fib)
+        lsf_sum = lsf_sum + lsf * len(fibs)          # weight by number of visits
+        n += len(fibs)
+    lsf = lsf_sum / n
+    lsf /= lsf.sum(axis=1, keepdims=True)
+    print(row['APOGEE_ID'], 'LSF:', {k[0]: len(v) for k, v in groups.items()})
+    return dict(lsf=lsf, lsf_offsets=x)
 
 # =====================================================================
 # one star

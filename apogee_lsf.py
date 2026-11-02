@@ -55,18 +55,19 @@ class ApogeeLSF:
     datadir : directory with the apLSF-[abc]-<lsfid>.fits and
         apWave-[abc]-<waveid>.fits files (default: $APOGEE_LSF_DIR).
     lsfid, waveid : file IDs (defaults as in apogee.spec.lsf).
+    prefix : 'ap' (APO, apLSF/apWave) or 'as' (LCO, asLSF/asWave).
     """
 
-    def __init__(self, datadir=None, lsfid='05440020', waveid='02420038'):
+    def __init__(self, datadir=None, lsfid='05440020', waveid='02420038', prefix='ap'):
         from astropy.io import fits
         datadir = datadir or os.environ.get('APOGEE_LSF_DIR')
         if not datadir:
             raise ValueError('give datadir= or set APOGEE_LSF_DIR')
         self.lsfpars, self.wavepix = {}, {}
         for chip in 'abc':
-            with fits.open(os.path.join(datadir, f'apLSF-{chip}-{lsfid}.fits')) as h:
+            with fits.open(os.path.join(datadir, f'{prefix}LSF-{chip}-{lsfid}.fits')) as h:
                 self.lsfpars[chip] = numpy.array(h[0].data, dtype=float)
-            with fits.open(os.path.join(datadir, f'apWave-{chip}-{waveid}.fits')) as h:
+            with fits.open(os.path.join(datadir, f'{prefix}Wave-{chip}-{waveid}.fits')) as h:
                 self.wavepix[chip] = numpy.array(h[2].data, dtype=float)
 
     # -- detector geometry -------------------------------------------

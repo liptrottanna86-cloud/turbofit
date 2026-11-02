@@ -264,7 +264,7 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
                       atmos_type=None, outputs_dir=None, shard_size=1000,
                       R_out=None, dw_out=None, wout=None, elems=None,
                       nlte=None, nlte_elems=None, broaden_kw=None, c12c13=None,
-                      broaden_axis=None):
+                      broaden_axis=None, air_to_vac=False, float32=False):
     """
     Write the grid-point table and shared settings to disk so that
     `run_one()` can be called standalone (from a job script / array
@@ -304,6 +304,13 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
     c12c13 : float, optional
         12C/13C number ratio used for every spectrum of the grid (default:
         the solarisotopes behaviour of synthesize()).
+    air_to_vac : bool
+        The line lists are in air but the grid should be in vacuum (e.g. on
+        the apStar pixels): convert each synthesised spectrum's wavelengths
+        to vacuum before broaden_kw / resampling.
+    float32 : bool
+        Save each point's flux/cont as float32 (halves the disk space; useful
+        for unconvolved full-resolution grids).
     broaden_kw : dict, optional
         Post-synthesis broadening/resampling with broaden.convolve(), e.g.
         dict(R=22500, dlogw_out=6e-6, wave_out=None) or an LSF:
@@ -347,7 +354,8 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
                 # reset Ne..Ti to 0 so the 'am' axis changes only O
                 elems=elems,
                 nlte=nlte, nlte_elems=list(nlte_elems) if nlte_elems else None,
-                broaden_kw=broaden_kw, c12c13=c12c13,
+                broaden_kw=broaden_kw, c12c13=c12c13, air_to_vac=bool(air_to_vac),
+                float32=bool(float32),
                 broaden_axis=(None if broaden_axis is None else
                               (str(broaden_axis[0]), [float(v) for v in broaden_axis[1]])))
     with open(os.path.join(outdir, 'grid_meta.pkl'), 'wb') as f:
@@ -493,6 +501,10 @@ def run_one(outdir, idx, overwrite=False, verbose=True):
         )
         if np.isscalar(flux) and flux == 0.:
             raise RuntimeError('synthesize() returned a failure sentinel (0.,0.,0.)')
+        if meta.get('air_to_vac'):
+            # air line lists -> vacuum wavelengths (Morton 2000), before any resampling
+            s2 = (1e4 / wave) ** 2
+            wave = wave * (1 + 8.34254e-5 + 2.406147e-2 / (130 - s2) + 1.5998e-4 / (38.9 - s2))
         extra = {}
         if meta.get('broaden_axis'):
             # one output spectrum per broadening value (no extra synthesis)
@@ -522,6 +534,8 @@ def run_one(outdir, idx, overwrite=False, verbose=True):
             flux = np.interp(w_out, wln, fc[0])
             cont = np.interp(w_out, wln, fc[1])
             wave = w_out
+        if meta.get('float32'):
+            flux, cont = np.asarray(flux, np.float32), np.asarray(cont, np.float32)
         np.savez(outfile, flux=flux, cont=cont, wave=wave,
                  teff=row['teff'], logg=row['logg'], mh=row['mh'], am=row['am'],
                  cm=row['cm'], nm=row['nm'], vmicro=row['vmicro'], **extra)
@@ -918,9 +932,12 @@ def write_ferre_grid(gridfile, ferre_root,
         interpolation at every node of a test grid returns that node). Any axis here that doesn't
         actually vary in the collected grid is dropped automatically
         (e.g. if you only ever used one vmicro).
-    normalize : bool
-        Divide flux by continuum before writing -- FERRE grids are almost
-        always continuum-normalized. Default True.
+    normalize : bool or callable
+        True (default): divide by the theoretical continuum. False: write the
+        absolute fluxes (e.g. to let FERRE normalise both data and models
+        with its CONT option). A callable f(wave, flux) -> normalised flux
+        normalises every model with the SAME procedure you apply to your
+        observed spectra (e.g. continuum.normalise with fixed chunks).
     resolution : float, optional
         If given, written as the header's RESOLUTION keyword.
     vacuum : int
@@ -993,7 +1010,13 @@ def write_ferre_grid(gridfile, ferre_root,
         for (lab, vals), stride in zip(axes, strides):
             idx = int(np.argmin(np.abs(vals - params[lab][row])))
             flat += idx * stride
-        spec = flux[row] / cont[row] if normalize else flux[row]
+        if callable(normalize):
+            spec = normalize(wave, flux[row])            # same procedure as the data
+            spec = np.where(np.isfinite(spec), spec, 1.0)   # pixels outside the chunks
+        elif normalize:
+            spec = flux[row] / cont[row]
+        else:
+            spec = flux[row]
         flux_out[flat] = spec
         filled[flat] = True
     if not filled.all():

@@ -112,4 +112,35 @@ tg.write_ferre_grid('grid_filled.npz', 'grid.ferre',
 In the flux block, **the last label in `labels` varies fastest**, as FERRE expects. Use the same `labels` order in `fill_grid_holes.py` and `write_ferre_grid()`.
 
 > [!NOTE]
-> Set `vacuum=1` if your line lists are in vacuum wavelengths (APOGEE lists are). The flag should describe your line lists, not Turbospectrum's default.
+> Set `vacuum=1` if your grid is in vacuum wavelengths: vacuum line lists, or `air_to_vac=True` (6.8). The flag should describe the grid's wavelengths, not Turbospectrum's default.
+
+## 6.7 Normalising models the same way as the data
+
+Collected grids keep absolute fluxes (`flux` and `cont`); normalisation is chosen only when the FERRE file is written, with `normalize=`:
+
+| `normalize=` | models are |
+|---|---|
+| `True` (default) | divided by the theoretical continuum |
+| a function `f(wave, flux)` | normalised by your own procedure |
+| `False` | written as absolute fluxes, e.g. to let FERRE normalise data and models together with its `CONT` option |
+
+To treat models and data identically, pass the same procedure you use for the observed spectra:
+
+```python
+import continuum
+chunks, deg = [(15140., 15810.), (15850., 16440.), (16470., 16960.)], 4
+norm = lambda w, f: continuum.normalise(w, f, chunks=chunks, deg=deg)[1]
+turbogrid.write_ferre_grid('grid_filled.npz', 'f_grid.dat', normalize=norm, vacuum=1)
+# and for the data, the same chunks and degree:
+_, nflux, nerr = continuum.normalise(wave, flux, err, chunks=chunks, deg=deg)
+```
+
+Pixels outside the chunks are written as 1 in the grid; give them no weight in the data.
+
+## 6.8 Instrument later, air line lists, disk space
+
+* **Instrument later.** Build the grid without `broaden_kw` and keep the unconvolved spectra; apply vmacro and any LSF or R afterwards with `broaden.convolve()` on each point, as many times as needed, without re-running Turbospectrum. `examples/build_gc_grid.py` does this (`convolve` step).
+* **Air line lists, vacuum data.** `write_grid_table(..., air_to_vac=True)` converts every synthesised spectrum to vacuum wavelengths before broadening and resampling, so the grid lands on vacuum pixels such as apStar's.
+* **Disk space.** `write_grid_table(..., float32=True)` stores each point's flux and continuum in single precision, halving the space for unconvolved grids.
+
+`examples/build_gc_grid.py` is a complete example: APOGEE-range M and GK grids, unconvolved by default, then instrument, collection, hole filling (`fill_grid_holes.py`), normalisation like the data, and the FERRE file.

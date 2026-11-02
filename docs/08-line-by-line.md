@@ -176,16 +176,18 @@ These errors describe the noise in your spectrum, so they are only as good as yo
 
 Using the larger of the propagated error and the observed scatter means the quoted error of the mean also covers line-to-line problems the noise model does not know about (log gf errors, unmodelled blends, continuum placement).
 
-**Calibration test.** One simulated spectrum (4500 K giant, R = 20 000, S/N = 100, [Fe/M] = +0.15) was refitted with 12 independent noise realisations. For six Fe windows, the spread of the fitted [Fe/M] values matched the error estimates:
+**Calibration test.** One simulated spectrum (4500 K giant, R = 20 000, S/N = 100, [Fe/M] = +0.15) was refitted with 12 independent noise realisations. For six Fe windows, the spread of the fitted [Fe/M] values compares with the error estimates as follows:
 
 | window (Å) | true scatter | `err_stat` | `err_lo` | `err_hi` | `err_mc` (40 draws) |
 |---|---|---|---|---|---|
 | 5405.48 | 0.016 | 0.015 | 0.015 | 0.015 | 0.013 |
-| 5423.78 | 0.043 | 0.044 | 0.045 | 0.044 | 0.043 |
-| 5435.07 | 0.019 | 0.020 | 0.020 | 0.020 | 0.019 |
+| 5414.03 | 0.096 | 0.155 | 0.156 | 0.155 | 0.135 |
 | 5417.06 | 0.131 | 0.141 | 0.135 | 0.144 | 0.147 |
+| 5423.78 | 0.043 | 0.044 | 0.045 | 0.044 | 0.043 |
+| 5425.30 | 0.204 | 0.150 | 0.147 | 0.152 | 0.155 |
+| 5435.07 | 0.019 | 0.020 | 0.020 | 0.020 | 0.019 |
 
-With 12 realisations the "true scatter" is itself uncertain by about 20 %.
+With 12 realisations the "true scatter" is itself uncertain by about 20 %. The strong and moderate lines agree to within that. The two weakest lines (5414.03 and 5425.30, flagged `weak` at this S/N) differ by up to ~40 % in either direction, because their errors are large and the χ² surface is far from parabolic.
 
 ## 8.7 Systematic errors from the stellar parameters
 

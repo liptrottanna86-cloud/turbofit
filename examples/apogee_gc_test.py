@@ -80,11 +80,13 @@ LINELISTS = ['/users/arialipt/turbofit/aplinelists/turbospec.20180901t20.atoms',
              '/users/arialipt/turbofit/aplinelists/turbospec.20180901t20.molec']
 MARCS_DIR = '/mnt/aridata1/users/arialipt/marcs_apogee'                         # APOGEE MARCS (C, alpha, M nodes)
 LINELISTS_AIR = False      # True if the line lists are in air (apStar is vacuum): Fe I at 15207.53 = air, 15211.68 = vacuum
-NODES = dict(teff=(15, 3000., 250.), logg=(12, -0.5, 0.5), mh=(14, -2.5, 0.25),
+TEFF_NODES = [float(t) for t in list(range(2800, 4001, 100)) + list(range(4250, 8001, 250))]
+NODES = dict(teff=TEFF_NODES, logg=(12, -0.5, 0.5), mh=(14, -2.5, 0.25),
              am=(7, -1.0, 0.25), cm=(11, -1.5, 0.25))
 ELEMENTS = ['C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'K', 'Ca', 'Ti', 'V',
             'Mn', 'Fe', 'Co', 'Ni', 'Ce', 'C12C13']
 BROADENING = 'vmac'
+VERBOSE = True             # print the fit's progress (cells, chi2, parameters)
 FILL_HOLES = True          # missing MARCS node -> nearest model at the same Teff/logg (as ASPCAP)
 FIX_VMICRO = False         # True: hold vmicro at ASPCAP's value (diagnostic run)
 N_JOBS = 16
@@ -216,24 +218,49 @@ def _pick(ids, mjd):
 _LSF_CACHE = {}
 
 
-def hole_filler(base, step=0.25, maxn=2):
-    """Wrap an atmosphere lookup: if a node is missing, use the nearest model
-    at the same Teff and log g, varying [C/M] first, then [a/M], then [M/H]
-    (up to maxn grid steps). The synthesis still uses the node's abundances."""
+def hole_filler(base, griddir, teff_nodes, step=0.25, dlogg=0.5, max_abund=2):
+    """Wrap an atmosphere lookup: if a node is missing, use the nearest existing
+    model, searching (in order of distance) up to max_abund steps in [M/H],
+    [a/M] and [C/M] and one step in log g and Teff. Abundance moves are
+    preferred over log g, and log g over Teff. The synthesis still uses the
+    node's own abundances. Each fill is printed once."""
+    import atmos
+    import itertools
+    import starfit
+    tn = np.sort(starfit._axis_values(teff_nodes))
+    done = {}
+
+    def exists(t, g, m, a, c):
+        f = os.path.join(griddir, os.path.basename(
+            atmos.filename(t, g, m, c, a, model='marcs', vers='x3')))
+        return os.path.exists(f) or os.path.exists(f + '.filled')
+
     def lookup(teff, logg, mh, am=0.0, cm=0.0):
-        p = base(teff, logg, mh, am, cm)
-        if p:
-            return p
-        for n in range(1, maxn + 1):
-            for k in ('cm', 'am', 'mh'):
-                for sgn in (-1, 1):
-                    v = dict(mh=mh, am=am, cm=cm)
-                    v[k] = round(v[k] + sgn * n * step, 3)
-                    p = base(teff, logg, v['mh'], v['am'], v['cm'])
-                    if p:
-                        print(f'hole ({teff:.0f}, {logg:+.1f}, {mh:+.2f}, {am:+.2f}, {cm:+.2f}) '
-                              f'filled with {k} {sgn * n * step:+.2f}')
-                        return p
+        key = (round(teff, 1), round(logg, 2), round(mh, 2), round(am, 2), round(cm, 2))
+        if key in done:
+            return done[key]
+        if exists(teff, logg, mh, am, cm):
+            done[key] = base(teff, logg, mh, am, cm)
+            return done[key]
+        k = int(np.argmin(np.abs(tn - teff)))
+        dts = [0.0] + [tn[j] - teff for j in (k - 1, k + 1) if 0 <= j < len(tn)]
+        r = range(-max_abund, max_abund + 1)
+        cands = []
+        for dm, da, dc, dg, dt in itertools.product(r, r, r, (0, -1, 1), dts):
+            cost = abs(dm) + abs(da) + abs(dc) + 2.5 * abs(dg) + (5.0 if dt else 0.0)
+            if cost > 0:
+                cands.append((cost, dm, da, dc, dg, dt))
+        cands.sort()
+        for cost, dm, da, dc, dg, dt in cands:
+            v = (teff + dt, round(logg + dg * dlogg, 2), round(mh + dm * step, 2),
+                 round(am + da * step, 2), round(cm + dc * step, 2))
+            if exists(*v):
+                print(f'hole ({teff:.0f}, {logg:+.1f}, {mh:+.2f}, {am:+.2f}, {cm:+.2f}) '
+                      f'filled with ({v[0]:.0f}, {v[1]:+.1f}, {v[2]:+.2f}, {v[3]:+.2f}, {v[4]:+.2f})')
+                done[key] = base(*v)
+                return done[key]
+        print(f'hole ({teff:.0f}, {logg:+.1f}, {mh:+.2f}, {am:+.2f}, {cm:+.2f}): nothing nearby')
+        done[key] = None
         return None
     return lookup
 
@@ -295,7 +322,7 @@ def run_star(row, lookup):
                            atmod_lookup=lookup, guess=guess, fixed=fixed,
                            broadening=BROADENING, n_jobs=N_JOBS, cache_dir=CACHE,
                            workdir=os.path.join(OUT, 'work', row['APOGEE_ID']),
-                           verbose=False)
+                           verbose=VERBOSE)
     p = res['params']
     rec = dict(apogee_id=row['APOGEE_ID'], gc=row['GC_NAME'], telescope=row['TELESCOPE'].strip(),
                snr=_f(row['SNR']), chi2r=_f(p.chi2r), flags=list(p.flags),
@@ -490,7 +517,7 @@ def main():
         return
     lookup = turbogrid.make_atmod_lookup(MARCS_DIR, flat=True)
     if FILL_HOLES:
-        lookup = hole_filler(lookup)
+        lookup = hole_filler(lookup, MARCS_DIR, NODES['teff'])
     for row in sel:
         try:
             run_star(row, lookup)

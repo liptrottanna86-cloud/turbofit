@@ -20,15 +20,6 @@ v, e, (vv, chi2) = rv.chi2_rv(wave, flux, err, twave, tflux, v0)
 
 **`chi2_rv`** scans around the CCF velocity, fits a parabola to χ²(v), and returns the velocity where χ² is lowest. Its error is where χ² rises by 1, scaled by the reduced χ² when that is above 1. It is the recommended final step.
 
-## 7.2 How well calibrated are the errors?
-
-On 30 simulated spectra (R = 22 500, S/N = 100, random velocities within ±300 km/s), the pulls (v − v_true)/σ had:
-
-* a mean of 0.02 and a standard deviation of 0.88 for `ccf_rv`;
-* a mean of 0.02 and a standard deviation of 0.76 for `chi2_rv`.
-
-Both error estimates are therefore realistic to slightly conservative.
-
-## 7.3 Per-line RV offsets
+## 7.2 Per-line RV offsets
 
 The line-by-line fitter also fits a small velocity offset per line, within ±`drv_max` km/s (default 5). This absorbs wavelength-calibration and line-list errors, and the offsets are reported as `drv` in the results table.

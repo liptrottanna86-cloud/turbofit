@@ -98,15 +98,7 @@ Any abundance set can also carry a ratio. `synthesize_sets(..., c12c13=8.)` uses
 The ratio is written to Turbospectrum's `ISOTOPES` block as the fractions ¹²C = r/(1+r) and ¹³C = 1/(1+r), for both babsma and bsyn. Without `c12c13`, carbon follows `solarisotopes`: Turbospectrum's solar mix (¹²C/¹³C ≈ 89.9) or the "giant" value of 15. Only molecular lines labelled with explicit isotopes (e.g. `'0607.013014'` for ¹³C¹⁴N, `'0608.013016'` for ¹³C¹⁶O) respond to the ratio, which is how standard Turbospectrum molecular line lists are labelled.
 
 > [!WARNING]
-> **Continuum opacities are recomputed for every set by default (`rerun_babsma=True`).** bsyn takes the electron pressure from babsma's opacity file. Reusing one file across abundance sets therefore freezes the ionisation balance. In a 4500 K giant, ±0.3 dex in Fe gave normalised-flux errors of **0.09**, and Ti and Ni gave 0.001–0.003. Set `rerun_babsma=False` only for trace elements and small steps; it is about 25 % faster.
+> **Continuum opacities are recomputed for every set by default (`rerun_babsma=True`).** bsyn takes the electron pressure from babsma's opacity file, so reusing one file across abundance sets freezes the ionisation balance. This matters most when the varied element is an electron donor (Fe, Mg, Si, Na, Al, Ca). Set `rerun_babsma=False` only for trace elements and small steps; it is somewhat faster.
 
 NLTE works here too. If the varied element is in `nlte_elems`, its departure coefficients are re-interpolated for each abundance step.
 
-## 2.3 Typical run times
-
-As a rough guide (gfortran build, one core, Turbospectrum v20.1, a 4500 K giant with a VALD atomic list):
-
-* about 2.5 s for a 50 Å range at `dw = 0.01` (babsma + bsyn);
-* about 0.8 s for two 1–2 Å segments.
-
-Molecule-rich H-band lists are slower per Å.

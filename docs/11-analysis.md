@@ -57,31 +57,7 @@ out['lines'].write('star1_lines.csv')
 
 Extra options go to each piece through `starfit_kw=`, `linefit_kw=` and `fit_kw=`.
 
-## 11.3 Test of the whole chain
-
-The test used one simulated spectrum:
-
-* two regions, 5400–5500 Å and 8000–8090 Å;
-* R = 20 000, S/N 150;
-* a curved, non-normalised continuum;
-* VALD atoms and an artificial CN test list.
-
-It was run through `turbofit.analyse(mode='local', elements=['Fe', 'Ti', 'C12C13'])`, with Teff, log g, [α/M] and [C/M] fixed (only two atmosphere nodes were available here):
-
-| quantity | injected | recovered |
-|---|---|---|
-| [M/H] | 0.00 | −0.005 |
-| [N/M] | 0.25 | 0.247 |
-| vmicro | 1.70 km/s | 1.718 |
-| vmac | 4.5 km/s | 4.51 |
-| RV | 37.3 km/s | 37.33 |
-| [Fe/M] (8 lines) | 0.00 | 0.010 ± 0.014 |
-| [Ti/M] (2 lines) | 0.00 | −0.013 ± 0.019 |
-| ¹²C/¹³C (3 windows) | 15 | 15.4 (13.3–17.7) |
-
-The whole run took 6 minutes on 2 cores, starting from an empty cache.
-
-## 11.4 Many stars
+## 11.3 Many stars
 
 There is nothing survey-specific. Loop over your spectra:
 

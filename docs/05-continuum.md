@@ -41,12 +41,3 @@ cont = continuum.running_percentile(wave, flux, width=20., q=90)
 ```
 
 This takes the q-th percentile in a running window of `width` Å. It is robust in very crowded regions, where a polynomial struggles.
-
-## 5.4 How good is it?
-
-On a simulated R = 22 500, S/N = 150 spectrum with 150 lines per 200 Å, a chip gap and a curved continuum:
-
-* the median deviation from the true continuum was 0.18 %;
-* the maximum deviation was 1.3 %.
-
-Part of this is simply that the pseudo-continuum sits slightly below the true one, because of blended line wings. That offset is the reason the fitting routines solve for the continuum together with the model, rather than relying on this normalisation.

@@ -26,7 +26,7 @@ r['failed']      # True if FERRE flagged the fit as failed
 
 Spectra must be continuum-normalised in the same way as the grid (the grid is normalised by default; `continuum.normalise`, chapter 5). Pixels outside your data, or marked bad, get an error of 10¹⁰, so FERRE ignores them.
 
-**Resampling.** Spectra are shifted to the rest frame and resampled onto the grid's pixels with a **cubic spline** (`resample='cubic'`, the default). Linear interpolation smooths the data, which biases broadening parameters. In a test (R = 20 000, 2.5 pixels per resolution element, injected vsini = 7.0 km/s), linear resampling gave vsini = 8.4 and cubic gave 7.1. When the data are already rest-frame on the grid's pixels (e.g. APOGEE apStar with an apStar-sampled grid), nothing is resampled.
+**Resampling.** Spectra are shifted to the rest frame and resampled onto the grid's pixels with a **cubic spline** (`resample='cubic'`, the default). Linear interpolation smooths the data and biases broadening parameters (vsini, vmac, vmicro) high, especially with few pixels per resolution element. When the data are already rest-frame on the grid's pixels (e.g. APOGEE apStar with an apStar-sampled grid), nothing is resampled.
 
 **Holding parameters fixed:**
 

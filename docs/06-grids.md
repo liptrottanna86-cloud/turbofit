@@ -107,9 +107,9 @@ tg.write_ferre_grid('grid_filled.npz', 'grid.ferre',
 * linear grids get `LOGW = 0` and `WAVE = λ₀ Δλ`;
 * log₁₀-uniform grids (e.g. from `dlogw_out`) get `LOGW = 1` and `WAVE = log₁₀λ₀ Δlog₁₀λ`.
 
-## 6.6 Axis order (verified)
+## 6.6 Axis order
 
-In the flux block, **the last label in `labels` varies fastest**. This was checked with FERRE itself: pure interpolation at every node of a test grid returned that node's spectrum to within 4 × 10⁻⁴. Use the same `labels` order in `fill_grid_holes.py` and `write_ferre_grid()`.
+In the flux block, **the last label in `labels` varies fastest**, as FERRE expects. Use the same `labels` order in `fill_grid_holes.py` and `write_ferre_grid()`.
 
 > [!NOTE]
 > Set `vacuum=1` if your line lists are in vacuum wavelengths (APOGEE lists are). The flag should describe your line lists, not Turbospectrum's default.

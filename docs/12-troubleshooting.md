@@ -33,7 +33,7 @@
 ## 12.3 Known quirks (handled for you)
 
 * **Turbospectrum v20.1's `RESOLUTION` keyword** is read with an `(a)` format and gives a garbage value. turbofit never writes it, so segments use Turbospectrum's default R = 500 000.
-* **Reusing babsma opacities** across abundance changes freezes the electron pressure (errors up to 0.09 in flux for Fe). babsma is rerun by default ([2.2](02-synthesis.md)).
+* **Reusing babsma opacities** across abundance changes freezes the electron pressure, which matters for electron donors such as Fe. babsma is rerun by default ([2.2](02-synthesis.md)).
 * **FERRE ends with `STOP 1`**, a non-zero exit status, even after a successful run. Success is judged by the output file.
 * **FERRE's `COVPRINT`** writes the full covariance matrix, not the upper triangle described in the manual.
 * **FERRE rejects starting values exactly on a grid edge.** They are nudged 0.001 inside.

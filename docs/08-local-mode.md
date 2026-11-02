@@ -53,7 +53,7 @@ Starting values that you don't give default to the middle of the node range for 
 * Each cell move adds the new face's nodes. Moving in [N/M] or vmicro only adds new ladder points.
 * By default only the wavelength ranges covered by your data are synthesised (one segment per data chunk, with a margin for the RV), so gaps between chips, gratings or setups cost nothing. Pass `segments=` to restrict it further to the windows you want to fit.
 
-As a guide, an H-band giant on 16 cores takes tens of minutes for the first star, and less for neighbours that share nodes. The cache also makes re-runs with different options cheap.
+The first star in a new part of parameter space takes longest; neighbours that share nodes, and re-runs with different options, reuse the cache.
 
 ## 8.4 Results
 
@@ -79,24 +79,3 @@ As a guide, an H-band giant on 16 cores takes tens of minutes for the first star
   * `'both'` only makes sense at high resolution and S/N. At R ≈ 20 000 the two are nearly degenerate below about 10 km/s, and the correlation matrix will show it.
 * **Fixed parameters:** for example, log g from asteroseismology, or Teff from photometry. Fixed values need not lie on a node; the cell still brackets them.
 * **What to fit:** for very cool or crowded spectra, pass `segments=` (rest-frame windows to synthesise) and/or `mask=` (pixels to use), so that regions with known line-list problems or tellurics are left out.
-
-## 8.6 Test
-
-The test spectrum was simulated as follows:
-
-* two separate wavelength regions, 5400–5500 Å and 8000–8090 Å, as two chunks;
-* R = 20 000 and S/N = 150;
-* a curved, non-normalised continuum;
-* RV = 37.3 km/s.
-
-Atoms came from VALD. CN came from an artificial test list, because no real molecular list was available here. The fit started from [M/H] = −0.5, vmicro = 1.4 and vmac = 3.0. Teff, log g, [α/M] and [C/M] were fixed, because only two atmosphere nodes, both at 4500 K, log g 2.5, were available in the test environment.
-
-| parameter | injected | fitted | covariance error | Monte Carlo error (20) |
-|---|---|---|---|---|
-| [M/H] | 0.00 | −0.005 | 0.008 | 0.005 |
-| [N/M] | 0.25 | 0.246 | 0.007 | 0.008 |
-| vmicro (km/s) | 1.70 | 1.719 | 0.015 | 0.010 |
-| vmac (km/s) | 4.5 | 4.51 | 0.05 | 0.07 |
-| RV (km/s) | 37.3 | 37.326 | 0.024 | — |
-
-It converged in 2 iterations, after 54 syntheses. Teff and log g fitting use the same code paths (cell weights and moves), but they have not been tested here with real atmosphere grids.

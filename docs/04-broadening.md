@@ -35,7 +35,7 @@ The steps, in order:
 Kernels are normalised automatically.
 
 > [!TIP]
-> Sample LSF arrays finely, ≤ 0.2 pixel (e.g. `lsf_offsets=np.arange(-7, 9.01, 0.1)`), because the kernel is linearly interpolated between offsets. At 1-pixel sampling, a σ ≈ 1-pixel LSF is widened by about 8 %. A fitted vmac absorbs this, and abundances are unaffected because equivalent widths are conserved, but vmac is then biased low.
+> Sample LSF arrays finely, ≤ 0.2 pixel (e.g. `lsf_offsets=np.arange(-7, 7.01, 0.1)`), because the kernel is linearly interpolated between offsets. Coarser sampling slightly widens the effective LSF, which then shows up as a lower fitted vmac.
 
 ## 4.3 Choosing the output grid
 
@@ -79,14 +79,5 @@ Details:
 * The profile already includes the detector pixel, so do **not** add `pixel_integrate=True`.
 * turbofit's vmac is the Gaussian 1/e half-width (σ = vmac/√2). In Bovy's `apogee.spec.lsf`, `vmacro` is a FWHM; a FWHM of F there corresponds to vmac ≈ F/1.665 here.
 
-The LSF evaluation is adapted from `apogee.spec.lsf` (J. Bovy, BSD-3), which is based on the APOGEE reduction code by J. Holtzman and D. Nidever. The adapted code was checked against analytic Gaussian LSF parameters: the second moment of the evaluated rows matches the expected σ² + 1/12 pixel² (pixel integration), converted to output pixels, to 0.1 %, on all three chips. With real APOGEE files it has not been checked against Bovy's original output.
+The LSF evaluation is adapted from `apogee.spec.lsf` (J. Bovy, BSD-3), which is based on the APOGEE reduction code by J. Holtzman and D. Nidever.
 
-## 4.6 How accurate is it?
-
-The following were checked numerically:
-
-* **Line width:** the measured σ of a convolved line is 0.29027 Å against 0.29028 Å expected.
-* **Equivalent width** is conserved to a few parts in 10⁹.
-* **R(λ):** a constant R(λ) matches a scalar R exactly.
-* **LSF arrays:** a finely sampled Gaussian LSF array matches R to 8 × 10⁻⁵ in flux.
-* **RV shift:** a 50 km/s shift is recovered to 0.004 km/s.

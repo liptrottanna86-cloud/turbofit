@@ -85,7 +85,7 @@ linefit.write_mask(mask, 'star1_mask.txt')          # inspect / edit / reuse
 
 ![automask](img/automask.png)
 
-*How `automask` chooses windows (Fe, 4500 K giant, R = 20 000).*
+*How `automask` chooses windows: Fe in a 4500 K giant at R = 20 000.*
 
 * **Top:** the star (purple), with [Fe/M] + 0.3 (pink dashed) and with Fe removed (grey dotted).
 * **Bottom:** the Fe response.
@@ -143,8 +143,6 @@ star['elems'] = [['Ce', 0.2], ['Nd', 0.3]]
 
 `LineFitter(broadening='vmac')` (default) or `broadening='vsini'` (rotating stars) chooses which broadening `fit(vmac=...)` controls. The other is held fixed at `star['vsini']` / `star['vmac']` if the star dictionary has it (e.g. from `starfit` or a grid with a broadening axis), and otherwise at the value given to `LineFitter`.
 
-In a test with an injected vsini of 12 km/s (R = 20 000, S/N 150), `broadening='vsini'` recovered 12.05 km/s.
-
 | value of `vmac=` | behaviour (for the broadening chosen above) |
 |---|---|
 | `'global'` (default) | a first pass fits vmac per line; it is then fixed to the median of the good lines, weighted by `snr_resp` |
@@ -179,19 +177,6 @@ These errors describe the noise in your spectrum, so they are only as good as yo
 | `err_total` | √(`err_meas`² + `err_sys`²) |
 
 Using the larger of the propagated error and the observed scatter means the quoted error of the mean also covers line-to-line problems the noise model does not know about (log gf errors, unmodelled blends, continuum placement).
-
-**Calibration test.** One simulated spectrum (4500 K giant, R = 20 000, S/N = 100, [Fe/M] = +0.15) was refitted with 12 independent noise realisations. For six Fe windows, the spread of the fitted [Fe/M] values compares with the error estimates as follows:
-
-| window (Å) | true scatter | `err_stat` | `err_lo` | `err_hi` | `err_mc` (40 draws) |
-|---|---|---|---|---|---|
-| 5405.48 | 0.016 | 0.015 | 0.015 | 0.015 | 0.013 |
-| 5414.03 | 0.096 | 0.155 | 0.156 | 0.155 | 0.135 |
-| 5417.06 | 0.131 | 0.141 | 0.135 | 0.144 | 0.147 |
-| 5423.78 | 0.043 | 0.044 | 0.045 | 0.044 | 0.043 |
-| 5425.30 | 0.204 | 0.150 | 0.147 | 0.152 | 0.155 |
-| 5435.07 | 0.019 | 0.020 | 0.020 | 0.020 | 0.019 |
-
-With 12 realisations the "true scatter" is itself uncertain by about 20 %. The strong and moderate lines agree to within that. The two weakest lines (5414.03 and 5425.30, flagged `weak` at this S/N) differ by up to ~40 % in either direction, because their errors are large and the χ² surface is far from parabolic.
 
 ## 10.7 The carbon isotope ratio ¹²C/¹³C
 
@@ -246,16 +231,6 @@ The ¹³C features are weak, so how well the ratio is constrained depends strong
 Because a 0.1 dex change in the ratio moves the spectrum far less than 0.1 dex in an abundance, a `C12C13` window is flagged `weak` when a 0.3 dex change (a factor of 2 in the ratio) moves it by less than 3σ.
 
 When the ratio is high, χ² often does not rise by 1 on the high side within the ladder. `err_hi` is then `inf`, meaning only a lower limit is measured. Quote it as such.
-
-**Test of the machinery.** No real molecular line list was available in the test environment, so the fit was checked with an **artificial** list: 40 made-up ¹²C¹⁴N lines and their ¹³C¹⁴N counterparts, each about 0.3–0.6 Å redward of its ¹²C line, near 8000–8090 Å. These lines are not physical data and only test the software.
-
-| injected ¹²C/¹³C | noise | windows (automatic / good) | recovered |
-|---|---|---|---|
-| 8 | none | 8 / 3 | 10.03 |
-| 8 | S/N = 100 | 8 / 4 | 9.1 (6.2–10.2) |
-| 25 | S/N = 100 | 8 / 1 | 15.8 (12.0–20.8) |
-
-At a ratio of 25 only one window remained usable and the result is about 2σ low. With so few weak lines, high ratios are poorly constrained, which is the regime described above. Real performance should be checked with your molecular line lists and data.
 
 ## 10.8 Systematic errors from the stellar parameters
 
@@ -317,17 +292,3 @@ linefit.plot_lines(res, 'star1_lines.pdf', ncols=4, element='Fe',
                    colors=('#3A1450', '#D6458F'))      # data, model; default black/red
 ```
 
-![line fits](img/linefit_example.png)
-
-*Fits to four automatically selected Fe windows (simulated R = 20 000, S/N = 150 spectrum with [Fe/M] = +0.15).*
-
-## 10.11 How well does it work?
-
-Tests on simulated spectra (4500 K giant, R = 20 000, VALD atomic lines, 5400–5500 Å):
-
-* **Noise-free, same atmosphere:** [Fe/M] = +0.15 was recovered to **±0.003 dex** line by line.
-* **S/N 150, blends from Ti, Ni and Ca at non-solar abundances, vmac fitted:**
-    * [Fe/M] = 0.136 ± 0.014 (truth 0.15);
-    * [Ti/M] = −0.213 ± 0.021 (truth −0.20);
-    * global vmac = 3.7 km/s (truth 4.0).
-* **The same fit with a per-pixel LSF array instead of R:** [Fe/M] = 0.139 and [Ti/M] = −0.191.

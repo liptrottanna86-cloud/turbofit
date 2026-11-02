@@ -49,8 +49,9 @@ D = BASE + '/apogee_dr17'                     # where get_apogee.sh puts the fil
 GC_VAC = D + '/GC_members_VAC-v1_1.fits'
 ALLSTAR = D + '/allStar-dr17-synspec_rev1.fits'
 ALLVISIT = D + '/allVisit-dr17-synspec_rev1.fits'
-APSTAR = D + '/stars/{telescope}/{field}/apStar-dr17-{apogee_id}.fits'   # filled by 'download'
-SAS_URL = 'https://data.sdss.org/sas/dr17/apogee/spectro/redux/dr17/stars/{telescope}/{field}/apStar-dr17-{apogee_id}.fits'
+APSTAR = D + '/stars/{telescope}/{field}/{file}'   # filled by 'download'
+SAS_URL = 'https://data.sdss.org/sas/dr17/apogee/spectro/redux/dr17/stars/{telescope}/{field}/{file}'
+# {file} is allStar's FILE column: apStar-dr17-<id>.fits (APO) or asStar-dr17-<id>.fits (LCO)
 
 # DR17 LSF and wavelength-solution IDs (cal/lsf, cal/wave). Each visit gets
 # the most recent LSF taken on or before its MJD; the star's LSF is the
@@ -123,7 +124,7 @@ def load_members():
     vac['GC_NAME'] = _str(vac['GC_NAME'])
 
     star = Table.read(ALLSTAR, hdu=1)
-    _need(star, ['APOGEE_ID', 'TELESCOPE', 'FIELD', 'SNR'] + list(ASPCAP_PARAMS.values()),
+    _need(star, ['APOGEE_ID', 'TELESCOPE', 'FIELD', 'FILE', 'SNR'] + list(ASPCAP_PARAMS.values()),
           'allStar')
     star['APOGEE_ID'] = _str(star['APOGEE_ID'])
     star = star[np.isin(star['APOGEE_ID'], vac['APOGEE_ID'])]
@@ -167,7 +168,7 @@ def star_visits(apogee_id, telescope):
 
 def read_apstar(row):
     path = APSTAR.format(telescope=row['TELESCOPE'].strip(), field=row['FIELD'].strip(),
-                         apogee_id=row['APOGEE_ID'])
+                         file=row['FILE'].strip())
     with fits.open(path) as h:
         flux = np.atleast_2d(h[1].data)[0].astype(float)    # row 0: combined spectrum
         err = np.atleast_2d(h[2].data)[0].astype(float)
@@ -187,7 +188,7 @@ def download(sel):
     import urllib.request
     for row in sel:
         kw = dict(telescope=row['TELESCOPE'].strip(), field=row['FIELD'].strip(),
-                  apogee_id=row['APOGEE_ID'])
+                  file=row['FILE'].strip())
         path = APSTAR.format(**kw)
         if os.path.exists(path) and os.path.getsize(path) > 0:
             continue
@@ -197,7 +198,7 @@ def download(sel):
             os.replace(path + '.part', path)
             print('got', path)
         except Exception as e:
-            print('FAILED', row['APOGEE_ID'], repr(e))
+            print('FAILED', row['APOGEE_ID'], SAS_URL.format(**kw), repr(e))
 
 
 def _id_mjd(i):

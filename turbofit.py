@@ -24,7 +24,9 @@ One call for one spectrum: stellar parameters -> line masks -> abundances.
 mode='local'  starfit.StarFitter: syntheses made on demand around this star,
               no grid needed (best for one star or modest samples).
 mode='grid'   FERRE on a turbogrid grid (grid=...), then the same line-by-line
-              stage (best for large samples that share one grid).
+              stage (best for large samples that share one grid). grid can be
+              a list of grids (e.g. cool and warm): each star is fitted on all
+              of them and the best fit is kept automatically.
 
 Nothing is calibrated empirically and there are no instrument presets: you
 describe your instrument with inst=.
@@ -53,7 +55,7 @@ def analyse(wave, flux, err, linelists, inst, elements, mode='local',
     linelists, inst : line lists and instrument (see broaden.py).
     elements : elements for the line-by-line stage (and 'C12C13' for the
         carbon isotope ratio); [] to stop after the stellar parameters.
-    mode : 'local' (starfit) or 'grid' (FERRE on grid=...).
+    mode : 'local' (starfit) or 'grid' (FERRE on grid=..., one file or a list).
     nodes, atmod_lookup, atmos_type : the CNO atmosphere grid (needed for
         local mode and for CNO-LTE line fitting).
     guess, fixed : starting / fixed parameters (local mode; in grid mode,

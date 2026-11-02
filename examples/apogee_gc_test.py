@@ -86,6 +86,11 @@ NODES = dict(teff=TEFF_NODES, logg=(12, -0.5, 0.5), mh=(14, -2.5, 0.25),
 ELEMENTS = ['C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'K', 'Ca', 'Ti', 'V',
             'Mn', 'Fe', 'Co', 'Ni', 'Ce', 'C12C13']
 BROADENING = 'vmac'
+MODE = 'local'             # 'local' (no grid) or 'grid' (FERRE on the grids from build_gc_grid.py)
+GRID_FILES = [BASE + '/gc_grids/M_lsf/f_gc_M_lsf.dat',     # all grids; each star is fitted
+              BASE + '/gc_grids/GK_lsf/f_gc_GK_lsf.dat']   # on each, the best fit is kept
+CONT_CHUNKS = [(15140., 15810.), (15850., 16440.), (16470., 16960.)]   # APOGEE chips; the
+CONT_DEG = 4               # grids are normalised with exactly these (build_gc_grid.py)
 VERBOSE = True             # print the fit's progress (cells, chi2, parameters)
 FILL_HOLES = True          # missing MARCS node -> interpolated (or nearest) model, see marcs_fill.py
 FILL_DIR = BASE + '/marcs_apogee_filled'   # filled models are written here (grid left untouched)
@@ -271,15 +276,22 @@ def run_star(row, lookup):
     if FIX_VMICRO and _f(row['VMICRO']):
         fixed = dict(vmicro=_f(row['VMICRO']))
 
+    gkw = dict(grid=GRID_FILES, cont_chunks=CONT_CHUNKS, cont_deg=CONT_DEG) if MODE == 'grid' else {}
+    if MODE == 'grid':
+        fixed = None                       # FIX_VMICRO applies to local mode only
     res = turbofit.analyse(wave, flux, err, linelists=LINELISTS, inst=inst,
-                           elements=ELEMENTS, mode='local', nodes=NODES,
+                           elements=ELEMENTS, mode=MODE, nodes=NODES,
                            atmod_lookup=lookup, guess=guess, fixed=fixed,
-                           broadening=BROADENING, n_jobs=N_JOBS, cache_dir=CACHE,
+                           broadening=BROADENING, n_jobs=N_JOBS, cache_dir=CACHE, **gkw,
                            workdir=os.path.join(OUT, 'work', row['APOGEE_ID']),
                            verbose=VERBOSE)
     p = res['params']
+    if MODE == 'grid':                     # FERRE result (best of the grids)
+        chi2r, flags = p['chi2'], ['edge_' + l for l in p.get('edge', [])]
+    else:
+        chi2r, flags = p.chi2r, list(p.flags)
     rec = dict(apogee_id=row['APOGEE_ID'], gc=row['GC_NAME'], telescope=row['TELESCOPE'].strip(),
-               snr=_f(row['SNR']), chi2r=_f(p.chi2r), flags=list(p.flags),
+               snr=_f(row['SNR']), chi2r=_f(chi2r), flags=flags, mode=MODE,
                star={k: _f(v) for k, v in res['star'].items()},
                star_err={k: _f(v) for k, v in res['star_err'].items()},
                lines={el: {k: (_f(v) if not isinstance(v, str) else v) for k, v in s.items()}

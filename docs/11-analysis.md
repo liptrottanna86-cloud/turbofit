@@ -41,6 +41,8 @@ out['lines'].write('star1_lines.csv')
 | fitted | everything in `starfit`, including vmicro and vmac/vsini | whatever axes the grid has (add `lgvmicro` and `lgvsini`/`lgvmac`, 6.4) |
 | fixing parameters | `fixed=dict(logg=2.45)` | `fixed={'LOGG': 2.45}` (FERRE labels), with `fit_labels=` |
 
+**Several grids.** `grid=` can be a list, e.g. a cool grid with 100 K Teff steps and a warmer one with 250 K steps (the MARCS Teff spacing changes at 4000 K). Each star is fitted on every grid and the best fit is kept: the lowest χ² among fits not pinned to a Teff or log g edge of their grid. You never sort stars between grids yourself; `out['params']['grid']` and `out['params']['grids']` show which grid won and the χ² on each.
+
 **The abundance stage is the same in both modes.** It uses the parameter-stage RV and, by default, its broadening (`fit_kw=dict(vmac='star')`), with the parameter errors feeding the systematics. Two further options apply there:
 
 * **NLTE:** `nlte=` / `nlte_elems=` treat those elements in NLTE where data exist.

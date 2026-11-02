@@ -79,6 +79,10 @@ COMMON = dict(
     vmicro=(4, -0.2, 0.2),                   # log10: 0.63, 1.00, 1.58, 2.51 km/s (4 points:
                                              #   lets FERRE interpolate cubically)
 )
+# Two grids because the MARCS Teff steps change at 4000 K (100 K below, 250 K
+# above). You never have to sort stars between them: give both FERRE files to
+# turbofit.analyse(mode='grid', grid=[...]) and each star is fitted on both,
+# keeping the better fit (apogee_gc_test.py does this with MODE = 'grid').
 GRID_DEFS = {
     'M':  dict(teff=[float(t) for t in range(3000, 4001, 100)], logg=(6, -0.5, 0.5), **COMMON),
     'GK': dict(teff=[float(t) for t in range(3500, 5501, 250)], logg=(8, 0.0, 0.5), **COMMON),
@@ -98,8 +102,8 @@ DW = 0.05                                    # synthesis step (A)
 #   'cont'  divided by the theoretical continuum
 #   'none'  absolute fluxes (let FERRE normalise both with its CONT option)
 NORMALISE = 'data'
-CONT_CHUNKS = [(15140., 15810.), (15850., 16440.), (16470., 16960.)]   # APOGEE chips (vacuum)
-CONT_DEG = 4
+CONT_CHUNKS = G.CONT_CHUNKS                  # set in apogee_gc_test.py, so the data
+CONT_DEG = G.CONT_DEG                        # are normalised with the same settings
 
 # LSF for 'lsf': LCO, average of the calibrations these stars' visits use
 GRID_LSF = [('as', '22940020', '22670000'), ('as', '29380037', '27980000')]
@@ -141,12 +145,25 @@ def grid_lsf():
     return lsf / lsf.sum(axis=1, keepdims=True), x
 
 
+def grid_wave():
+    """Output pixels: the apStar grid, in the line lists' frame. With air line
+    lists it is the same log-lambda grid started at the air wavelength of the
+    first apStar pixel (pixel k <-> apStar pixel k to < 0.02 pixel), so data
+    and grid are both handled in air, like the line-by-line stage."""
+    w = apogee_lsf.apStarWavegrid()
+    if not G.LINELISTS_AIR:
+        return w
+    s2 = (1e4 / w[0]) ** 2
+    w0 = w[0] / (1 + 8.34254e-5 + 2.406147e-2 / (130 - s2) + 1.5998e-4 / (38.9 - s2))
+    return 10 ** (np.log10(w0) + 6e-6 * np.arange(len(w)))
+
+
 def instrument_kw(instrument):
-    """broaden.convolve() keywords for 'lsf' or a resolving power, onto apStar pixels."""
+    """broaden.convolve() keywords for 'lsf' or a resolving power, onto grid_wave()."""
     if instrument == 'lsf':
         lsf, x = grid_lsf()
-        return dict(lsf=lsf, lsf_offsets=x, wave_out=apogee_lsf.apStarWavegrid())
-    return dict(R=float(instrument), wave_out=apogee_lsf.apStarWavegrid())
+        return dict(lsf=lsf, lsf_offsets=x, wave_out=grid_wave())
+    return dict(R=float(instrument), wave_out=grid_wave())
 
 
 def setup(name):
@@ -161,9 +178,7 @@ def setup(name):
     else:
         kw = dict(broaden_kw=instrument_kw(INSTRUMENT), broaden_axis=('vmac', VMAC))
     turbogrid.write_grid_table(params, outdir, wrange=WRANGE, dw=DW, linelists=G.LINELISTS,
-                               outputs_dir=os.path.join(OUTPUTS, name),
-                               air_to_vac=G.LINELISTS_AIR,     # grid always in vacuum, like apStar
-                               **kw)
+                               outputs_dir=os.path.join(OUTPUTS, name), **kw)
     n_tasks = -(-len(params) // POINTS_PER_TASK)
     turbogrid.write_slurm_array(outdir, jobname=f'grid{name}', time='48:00:00', mem='64G',
                                 partition=PARTITION, array_step=POINTS_PER_TASK,
@@ -277,7 +292,7 @@ def ferre(name):
         labels = ['lgvmac'] + labels
     turbogrid.write_ferre_grid(os.path.join(outdir, 'grid_filled.npz'),
                                os.path.join(outdir, f'f_gc_{name}.dat'), labels=tuple(labels),
-                               normalize=norm, vacuum=1)  # apStar pixels, vacuum
+                               normalize=norm, vacuum=0 if G.LINELISTS_AIR else 1)
     if NORMALISE == 'data':
         print(f'normalise the data the same way: cont_chunks={CONT_CHUNKS}, cont_deg={CONT_DEG}')
 

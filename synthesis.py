@@ -117,8 +117,12 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
         import nlte as nlte_mod
         if nlte is None:
             raise ValueError('nlte_elems given but no nlte=NLTEConfig(...)')
-        atmod, nlte_info = nlte_mod.prepare(nlte, teff, logg, mh, abundances,
-                                            nlte_elems, workdir='.')
+        try:
+            atmod, nlte_info = nlte_mod.prepare(nlte, teff, logg, mh, abundances,
+                                                nlte_elems, workdir='.')
+        except Exception:
+            os.chdir(cwd)
+            raise
         atmos_type = 'marcs_interpol'
 
     # Identify model atmosphere file type

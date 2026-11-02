@@ -104,7 +104,7 @@ What it does:
 This works the same way for molecular features (C from CO/CN/CH, N from CN, O from OH) as for atomic lines.
 
 > [!TIP]
-> `min_response` is a flux change for +`dx` dex. A sensible value is a few times your noise per pixel, divided by √(pixels per line). Low-S/N spectra want a higher threshold. Lines that end up too weak are flagged `weak` anyway (8.6).
+> `min_response` is a flux change for +`dx` dex. A sensible value is a few times your noise per pixel, divided by √(pixels per line). Low-S/N spectra want a higher threshold. Lines that end up too weak are flagged `weak` anyway (8.8).
 
 ## 8.4 Fitting
 
@@ -114,7 +114,7 @@ star = dict(teff=4520., logg=1.9, mh=-0.42, am=0.18, cm=-0.20, nm=0.30,
 star_err = dict(teff=50., logg=0.10, mh=0.05, am=0.03, cm=0.05)
 
 res = lf.fit(wave, flux, err, star, mask=mask, star_err=star_err,
-             vmac='global', iterate=1)
+             vmac='global', iterate=1, profile=True, mc=0)
 ```
 
 If `mask` is omitted, `elements=[...]` must be given and `automask` is run once.
@@ -128,7 +128,7 @@ If `mask` is omitted, `elements=[...]` must be given and `automask` is run once.
 
 The fit uses `scipy.optimize.least_squares`, with [X/M] bounded by the ladder. When a fit reaches the ladder's end, the ladder is extended and the window refitted.
 
-**Statistical error:** from the Jacobian, scaled by √χ²_red when χ²_red > 1.
+**Measurement errors:** see 8.6 below.
 
 ### Blends between fitted elements: `iterate`
 
@@ -150,7 +150,44 @@ star['elems'] = [['Ce', 0.2], ['Nd', 0.3]]
 
 The value used is stored in `res.vmac`.
 
-## 8.6 Systematic errors from the stellar parameters
+## 8.6 Measurement errors on the abundances
+
+There are three per-line estimates of the measurement (noise) error on [X/M], and a combined error for each element.
+
+| column | how it is computed | cost |
+|---|---|---|
+| `err_stat` | curvature of χ² at the best fit (from the Jacobian), scaled by √χ²_red when χ²_red > 1 | free |
+| `err_lo`, `err_hi` | **χ² profile**: [X/M] is stepped across the best fit, with the RV offset (and vmac, if free) re-optimised at each step. The errors are where χ² rises by 1 (in units of χ²_red when that exceeds 1). They can be asymmetric, which matters for weak lines and lines on the saturated part of the curve of growth. `inf` means χ² never rose by 1 within the abundance ladder, so the line does not constrain the abundance on that side. | ~17 small refits per line; on by default (`profile=True`) |
+| `err_mc` | **Monte Carlo**: the line is refitted `mc` times with Gaussian noise drawn from your `err` added to the data. This is the standard deviation of those fits. | `mc` refits per line; off by default (`mc=0`; `mc=100` is plenty) |
+
+None of these need extra Turbospectrum runs; they only refit the interpolated model. They are computed on the final pass only. Pass `seed=` for reproducible Monte Carlo errors.
+
+These errors describe the noise in your spectrum, so they are only as good as your `err` array. If the per-pixel errors are underestimated, χ²_red > 1 and `err_stat`/`err_lo`/`err_hi` are inflated accordingly. `err_mc` is not, so compare it with them as a check.
+
+**For each element** (`res.summary`):
+
+| key | meaning |
+|---|---|
+| `err_mean` | error of the weighted mean from the per-line `err_stat` |
+| `std`, `err_scatter` | line-to-line standard deviation, and `std/√n` |
+| `err_meas` | measurement error of the mean: the larger of `err_mean` and `err_scatter` |
+| `err_sys` | stellar-parameter systematic (8.7), correlated between lines |
+| `err_total` | √(`err_meas`² + `err_sys`²) |
+
+Using the larger of the propagated error and the observed scatter means the quoted error of the mean also covers line-to-line problems the noise model does not know about (log gf errors, unmodelled blends, continuum placement).
+
+**Calibration test.** One simulated spectrum (4500 K giant, R = 20 000, S/N = 100, [Fe/M] = +0.15) was refitted with 12 independent noise realisations. For six Fe windows, the spread of the fitted [Fe/M] values matched the error estimates:
+
+| window (Å) | true scatter | `err_stat` | `err_lo` | `err_hi` | `err_mc` (40 draws) |
+|---|---|---|---|---|---|
+| 5405.48 | 0.016 | 0.015 | 0.015 | 0.015 | 0.013 |
+| 5423.78 | 0.043 | 0.044 | 0.045 | 0.044 | 0.043 |
+| 5435.07 | 0.019 | 0.020 | 0.020 | 0.020 | 0.019 |
+| 5417.06 | 0.131 | 0.141 | 0.135 | 0.144 | 0.147 |
+
+With 12 realisations the "true scatter" is itself uncertain by about 20 %.
+
+## 8.7 Systematic errors from the stellar parameters
 
 In **CNO-LTE** mode these cost no extra synthesis. The node spectra are already computed, so for each parameter p in `star_err`:
 
@@ -167,12 +204,13 @@ Optional extras, which need extra syntheses:
 * `sys_vmicro=True`: adds vmicro, from ladders at vmicro ± σ for the dominant node only (two extra ladders per element).
 * `sys_nlte=True`: in NLTE mode, ladders at Teff, log g and [M/H] ± σ (and vmicro). That is six to eight extra ladders per element.
 
-## 8.7 Results
+## 8.8 Results
 
 ```python
 res.summary['Fe']
 # {'n': 7, 'xm': 0.129, 'xh': -0.291, 'err_mean': 0.007, 'std': 0.043,
-#  'err_sys': 0.112, 'mode': 'CNO-LTE'}
+#  'err_scatter': 0.016, 'err_meas': 0.016, 'err_sys': 0.112, 'err_total': 0.113,
+#  'mode': 'CNO-LTE'}
 t = res.table()          # astropy Table, one row per window
 res.write('star1_lines.csv')
 ```
@@ -182,7 +220,8 @@ res.write('star1_lines.csv')
 | `element, center, wmin, wmax` | the window (rest frame) |
 | `mode` | `CNO-LTE` or `NLTE` |
 | `xm`, `xh` | [X/M] and [X/H] (= [X/M] + the star's [M/H]); see below for [X/Fe] |
-| `err_stat`, `err_sys` | statistical and parameter-propagated systematic error on [X/M] |
+| `err_stat`, `err_lo`, `err_hi`, `err_mc` | measurement errors on [X/M] (8.6) |
+| `err_sys` | parameter-propagated systematic error on [X/M] (8.7) |
 | `dxh_d<p>` | d[X/H]/dp for each parameter in `star_err` |
 | `drv`, `vmac` | per-line velocity offset and the vmac used |
 | `chi2r`, `npix` | reduced χ² and number of pixels |
@@ -201,7 +240,7 @@ x_fe = res.summary['Mg']['xh'] - res.summary['Fe']['xh']      # [Mg/Fe]
 
 For its error, combine the two statistical errors in quadrature (`err_mean`, or `std`/√n). The [M/H] part of the systematic error largely cancels in the difference, because both elements respond to [M/H] in the same way. The derivatives in `dxh_dmh` show by how much.
 
-## 8.8 Plots
+## 8.9 Plots
 
 ```python
 linefit.plot_lines(res, 'star1_lines.pdf', ncols=4, element='Fe',
@@ -212,7 +251,7 @@ linefit.plot_lines(res, 'star1_lines.pdf', ncols=4, element='Fe',
 
 *Fits to four automatically selected Fe windows (simulated R = 20 000, S/N = 150 spectrum with [Fe/M] = +0.15).*
 
-## 8.9 How well does it work?
+## 8.10 How well does it work?
 
 Tests on simulated spectra (4500 K giant, R = 20 000, VALD atomic lines, 5400–5500 Å):
 

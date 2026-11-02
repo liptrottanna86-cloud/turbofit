@@ -77,7 +77,7 @@ Returns `(star, star_err)`.
 **`LineFitter(linelists, inst, nodes=None, atmod_lookup=None, atmos_type='marcs', nlte=None, nlte_elems=(), offsets=(-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6), dw=0.02, n_jobs=1, drv_max=5.0, vmac=3.0, vsini=0.0, cont_deg=1, max_extend=2, workdir=None, verbose=True)`**
 
 * `.automask(elements, star, wave_obs, dx=0.3, min_response=0.02, max_blend=0.3, cut=0.25, exclude=None, wrange=None)` returns a list of window dictionaries.
-* `.fit(wave, flux, err, star, elements=None, mask=None, star_err=None, vmac='global', iterate=1, sys_vmicro=False, sys_nlte=False, min_pix=4)` returns a `LineFitResult`.
+* `.fit(wave, flux, err, star, elements=None, mask=None, star_err=None, vmac='global', iterate=1, sys_vmicro=False, sys_nlte=False, min_pix=4, profile=True, mc=0, seed=None)` returns a `LineFitResult`.
 * `.mode(elem)` returns `'CNO-LTE'` or `'NLTE'`.
 
 **`LineFitResult`**

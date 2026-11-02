@@ -243,17 +243,24 @@ class LineFitResult:
                     if p == 'mh':
                         dm -= 1.0          # [X/M] = [X/H] - [M/H]
                     sys2 += (dm * sig) ** 2
+            err_mean = np.sqrt(1 / np.sum(w))
+            std = np.std(x, ddof=1) if len(L) > 1 else np.nan
+            err_scatter = std / np.sqrt(len(L)) if len(L) > 1 else np.nan
+            # measurement error of the mean: the larger of the propagated
+            # per-line errors and the observed line-to-line scatter
+            err_meas = np.nanmax([err_mean, err_scatter])
+            err_sys = np.sqrt(sys2) if self.star_err else np.nan
             out[el] = dict(n=len(L), xm=mean, xh=mean + self.star.get('mh', 0.0),
-                           err_mean=np.sqrt(1 / np.sum(w)),
-                           std=np.std(x, ddof=1) if len(L) > 1 else np.nan,
-                           err_sys=np.sqrt(sys2) if self.star_err else np.nan,
+                           err_mean=err_mean, std=std, err_scatter=err_scatter,
+                           err_meas=err_meas, err_sys=err_sys,
+                           err_total=np.sqrt(err_meas ** 2 + (err_sys if np.isfinite(err_sys) else 0.0) ** 2),
                            mode=L[0]['mode'])
         return out
 
     def table(self):
         from astropy.table import Table
         cols = ['element', 'center', 'wmin', 'wmax', 'mode', 'xm', 'xh', 'err_stat',
-                'err_sys', 'drv', 'vmac', 'chi2r', 'npix', 'snr_resp', 'response',
+                'err_lo', 'err_hi', 'err_mc', 'err_sys', 'drv', 'vmac', 'chi2r', 'npix', 'snr_resp', 'response',
                 'blend', 'flags', 'ok']
         t = Table({c: [l[c] for l in self.lines] for c in cols})
         for p in self.star_err:
@@ -560,8 +567,15 @@ class LineFitter:
             inst['lsf'] = np.asarray(inst['lsf'])[idx]
         return idx, inst
 
-    def _fit_one(self, wm, cube, xm, wo, fo, eo, inst, rv, x0, vm0, fit_vmac, fixed=None):
-        """Fit one window. cube: (nx, npix) normalised model on rest wave wm."""
+    def _fit_one(self, wm, cube, xm, wo, fo, eo, inst, rv, x0, vm0, fit_vmac, fixed=None,
+                 profile=False, mc=0, rng=None):
+        """Fit one window. cube: (nx, npix) normalised model on rest wave wm.
+
+        profile : also return asymmetric 1-sigma errors from the chi^2 profile
+            (abundance stepped, RV offset [and vmac] re-optimised at each step).
+        mc : number of Monte Carlo refits with Gaussian noise (from eo) added
+            to the data; returns their standard deviation as err_mc.
+        """
         lam = np.median(wo)
         pad = self._pad(lam)
         f_ = broaden.doppler(1.0, rv)
@@ -571,7 +585,7 @@ class LineFitter:
         t = (wo - lam) / lam
         deg = self.cont_deg
 
-        def model(p, full=False):
+        def model(p, fdat=fo):
             x, drv, vm = p[0], p[1], (p[2] if fit_vmac else vm0)
             s = spl(x)
             if vm > 0 or self.vsini > 0:
@@ -581,14 +595,16 @@ class LineFitter:
             if deg is None:
                 return m
             A = np.vstack([m * t ** k for k in range(deg + 1)]).T
-            c, *_ = np.linalg.lstsq(A / eo[:, None], fo / eo, rcond=None)
+            c, *_ = np.linalg.lstsq(A / eo[:, None], fdat / eo, rcond=None)
             return A @ c
 
-        def resid(p):
-            return (fo - model(p)) / eo
+        def resid(p, fdat=fo):
+            return (fdat - model(p, fdat)) / eo
 
         lo = [xm[0], -self.drv_max] + ([0.0] if fit_vmac else [])
         hi = [xm[-1], self.drv_max] + ([30.0] if fit_vmac else [])
+        xs = [0.1, 1.0] + ([1.0] if fit_vmac else [])
+        ds = [1e-3, 1e-3] + ([1e-3] if fit_vmac else [])
         p0 = [np.clip(x0, xm[0] + 1e-3, xm[-1] - 1e-3), 0.0] + ([np.clip(vm0, 0.1, 29)] if fit_vmac else [])
         if fixed is not None:
             # refit only the abundance, other parameters frozen (systematics)
@@ -596,12 +612,12 @@ class LineFitter:
                 return resid([q[0]] + list(fixed[1:]))
             r = least_squares(r1, [fixed[0]], bounds=([xm[0]], [xm[-1]]), x_scale=[0.1])
             return r.x[0]
-        r = least_squares(resid, p0, bounds=(lo, hi), x_scale=[0.1, 1.0] + ([1.0] if fit_vmac else []),
-                          diff_step=[1e-3, 1e-3] + ([1e-3] if fit_vmac else []))
+        r = least_squares(resid, p0, bounds=(lo, hi), x_scale=xs, diff_step=ds)
         chi2 = 2 * r.cost
         dof = max(len(fo) - len(p0) - (0 if deg is None else deg + 1), 1)
+        scale = max(1.0, chi2 / dof)
         try:
-            cov = np.linalg.inv(r.jac.T @ r.jac) * max(1.0, chi2 / dof)
+            cov = np.linalg.inv(r.jac.T @ r.jac) * scale
             ex = float(np.sqrt(cov[0, 0]))
         except np.linalg.LinAlgError:
             ex = np.nan
@@ -610,12 +626,53 @@ class LineFitter:
         p_dn = list(r.x); p_dn[0] = max(r.x[0] - 0.1, xm[0])
         dm = (model(p_up) - model(p_dn)) / max(p_up[0] - p_dn[0], 1e-6) * 0.1
         snr_resp = float(np.sqrt(np.sum((dm / eo) ** 2)))
-        return dict(x=r.x, xm=float(r.x[0]), err=ex, chi2r=chi2 / dof, model=model(r.x),
-                    snr_resp=snr_resp)
+        out = dict(x=r.x, xm=float(r.x[0]), err=ex, chi2r=chi2 / dof, model=model(r.x),
+                   snr_resp=snr_resp, err_lo=np.nan, err_hi=np.nan, err_mc=np.nan)
+
+        if profile:
+            # chi^2 profile in [X/M]: nuisance parameters re-optimised at each step
+            xb = float(r.x[0])
+            s0 = ex if np.isfinite(ex) and ex > 0 else 0.05
+            grid = np.unique(np.clip(xb + s0 * np.linspace(-4, 4, 17), xm[0], xm[-1]))
+            prof = []
+            for xg in grid:
+                if len(r.x) > 1:
+                    rr = least_squares(lambda q: resid([xg] + list(q)), r.x[1:],
+                                       bounds=(lo[1:], hi[1:]), x_scale=xs[1:], diff_step=ds[1:])
+                    prof.append(2 * rr.cost)
+                else:
+                    prof.append(float(np.sum(resid([xg]) ** 2)))
+            dchi = (np.array(prof) - chi2) / scale
+            dchi = np.maximum(dchi, 0.0)
+
+            def crossing(side):
+                sel = grid >= xb if side > 0 else grid <= xb
+                g, d = grid[sel], dchi[sel]
+                o = np.argsort(np.abs(g - xb))
+                g, d = g[o], d[o]
+                for k in range(1, len(g)):
+                    if d[k] >= 1.0:
+                        # linear interpolation between the bracketing points
+                        f = (1.0 - d[k - 1]) / max(d[k] - d[k - 1], 1e-12)
+                        return abs(g[k - 1] + f * (g[k] - g[k - 1]) - xb)
+                return np.inf    # never rose by 1 within the ladder / scan
+            out['err_lo'], out['err_hi'] = crossing(-1), crossing(+1)
+
+        if mc and mc > 0:
+            rng = rng or np.random.default_rng()
+            xs_mc = []
+            for _ in range(int(mc)):
+                fk = fo + rng.normal(0.0, eo)
+                rk = least_squares(lambda q: resid(q, fk), r.x, bounds=(lo, hi),
+                                   x_scale=xs, diff_step=ds)
+                xs_mc.append(rk.x[0])
+            out['err_mc'] = float(np.std(xs_mc, ddof=1))
+        return out
 
     # ------------------------------------------------------------------
     def fit(self, wave, flux, err, star, elements=None, mask=None, star_err=None,
-            vmac='global', iterate=1, sys_vmicro=False, sys_nlte=False, min_pix=4):
+            vmac='global', iterate=1, sys_vmicro=False, sys_nlte=False, min_pix=4,
+            profile=True, mc=0, seed=None):
         """
         Fit every window in `mask` (default: automask for `elements`).
 
@@ -628,6 +685,11 @@ class LineFitter:
             fix it to the response-weighted median of the good lines; 'line'
             -- free per line (degenerate with abundance for weak lines in
             narrow windows); or a number to fix it.
+        profile : asymmetric measurement errors err_lo / err_hi from the
+            chi^2 profile of each line (final pass only; no extra synthesis).
+        mc : number of Monte Carlo noise realisations per line (final pass
+            only) -> err_mc. 0 (default) to skip; ~100 is plenty.
+        seed : random seed for the Monte Carlo errors.
         iterate : extra passes in which the abundances just measured for the
             fitted elements are fed back into the synthesis (so blends from
             one fitted element into another's windows are modelled with
@@ -661,7 +723,8 @@ class LineFitter:
             last = ip == npass - 1
             res = self._fit_pass(wave, flux, err, star, elements, mask,
                                  star_err if last else {}, fit_vmac, vm,
-                                 sys_vmicro and last, sys_nlte and last, min_pix)
+                                 sys_vmicro and last, sys_nlte and last, min_pix,
+                                 profile=profile and last, mc=mc if last else 0, seed=seed)
             if last:
                 break
             # feed the measured abundances back in for the next pass
@@ -675,7 +738,8 @@ class LineFitter:
         return res
 
     def _fit_pass(self, wave, flux, err, star, elements, mask, star_err, fit_vmac, vmac0,
-                  sys_vmicro, sys_nlte, min_pix):
+                  sys_vmicro, sys_nlte, min_pix, profile=False, mc=0, seed=None):
+        rng = np.random.default_rng(seed)
         wave = np.asarray(wave, float); flux = np.asarray(flux, float); err = np.asarray(err, float)
         star = dict(star)
         rv = star.get('rv', 0.0)
@@ -715,7 +779,7 @@ class LineFitter:
                         results.append(None)
                         continue
                     r = self._fit_one(wm, cube, xm, wave[idx], flux[idx], err[idx], inst, rv,
-                                      b0, vmac0, fit_vmac)
+                                      b0, vmac0, fit_vmac, profile=profile, mc=mc, rng=rng)
                     results.append((idx, inst, r))
                     if r['xm'] <= xm[0] + 0.02:
                         need_lo = True
@@ -779,7 +843,8 @@ class LineFitter:
                            mode=md, response=win.get('response', np.nan),
                            blend=win.get('blend', np.nan), dxh_dp={}, flags='')
                 if rr is None:
-                    row.update(xm=np.nan, xh=np.nan, err_stat=np.nan, err_sys=np.nan, drv=np.nan,
+                    row.update(xm=np.nan, xh=np.nan, err_stat=np.nan, err_sys=np.nan,
+                               err_lo=np.nan, err_hi=np.nan, err_mc=np.nan, drv=np.nan,
                                vmac=np.nan, chi2r=np.nan, npix=0, snr_resp=np.nan, ok=False,
                                flags='nodata', wave=None, flux=None, model=None)
                     lines.append(row)
@@ -803,6 +868,7 @@ class LineFitter:
                     dd = d - 1.0 if p == 'mh' else d    # error on [X/M]
                     sys2 += (dd * star_err[p]) ** 2
                 row.update(xm=r['xm'], xh=r['xm'] + star.get('mh', 0.0), err_stat=r['err'],
+                           err_lo=r['err_lo'], err_hi=r['err_hi'], err_mc=r['err_mc'],
                            err_sys=np.sqrt(sys2) if sys_cubes else np.nan,
                            drv=float(r['x'][1]), vmac=float(r['x'][2]) if fit_vmac else vmac0,
                            chi2r=r['chi2r'], npix=len(idx), snr_resp=r['snr_resp'],

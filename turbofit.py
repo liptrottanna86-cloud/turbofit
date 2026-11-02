@@ -107,6 +107,8 @@ def analyse(wave, flux, err, linelists, inst, elements, mode='local',
                                ferre_extra=ferre_extra, fit_labels=fit_labels,
                                ferre_init=fixed, params_only=True)
         params = out['ferre']
+        if 'grids' in out:                   # several grids: record which one won
+            params = dict(params, grid=out['grid'], grids=out['grids'])
         star, star_err = out['star'], out['star_err']
         if c12c13 is not None:
             star['c12c13'] = c12c13

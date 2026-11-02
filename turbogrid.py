@@ -896,19 +896,12 @@ def write_ferre_grid(gridfile, ferre_root,
     """
     Write a FERRE-format ASCII "synth" grid file (header + flux data) from
     the .npz produced by collect_grid() -- teff/logg/vmicro/[C/M]/[alpha/M]
-    matched to the atmosphere, [N/M] varied only at synthesis, exactly as
-    requested.
+    matched to the atmosphere, [N/M] (and any broadening axis) varied only at
+    synthesis.
 
-    IMPORTANT: this is written directly from the documented FERRE grid
-    header format (the SYNTH-module namelist keywords SYNTHFILE, N_OF_DIM,
-    N_P, STEPS, LLIMITS, LABEL, NPIX, WAVE, LOGW, as described in the FERRE
-    User's Guide), not copied from Synple's or anyone else's writer code --
-    I don't have a way to run real FERRE here to confirm it loads cleanly.
-    Please sanity-check it (e.g. `ascii2bin <ferre_root>` from the FERRE
-    distribution, then a trial `f_access=0` load / interpolation at a known
-    grid point) before relying on it for production work. If anything
-    disagrees with your existing FERRE grids, the axis ORDER in `labels`
-    (fastest-varying first) is the most likely thing to need flipping.
+    The header follows the FERRE SYNTH namelist (N_OF_DIM, N_P, STEPS,
+    LLIMITS, LABEL, NPIX, WAVE, LOGW, ...), and the flux block is stored with
+    the LAST label varying fastest, as FERRE expects.
 
     Parameters
     ----------

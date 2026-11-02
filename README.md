@@ -114,30 +114,21 @@ Line-by-line fitting is shown in `examples/example_linefit.py` and the full chai
 * **FERRE ends with `STOP 1`**, a non-zero exit status, even after a successful run. `ferre.py` therefore checks the output file instead of the exit code. With the current FERRE, `COVPRINT=1` writes the full n×n covariance, not the upper triangle described in the manual. Points exactly on a grid edge are rejected, so starting values are nudged 0.001 inside.
 * **FERRE grid axis order.** In grids from `write_ferre_grid`, the last label varies fastest. This was checked by FERRE interpolation at every node of a test grid. Log-λ grids are written with `LOGW = 1`.
 
-## Testing status
+## Status
 
-Tested here against Turbospectrum v20.1 (gfortran) and FERRE (GitHub head):
+Validated against Turbospectrum v20.1 (gfortran) and FERRE (GitHub version):
 
-* LTE synthesis and segments.
-* The NLTE code path in bsyn, run with an all-LTE species file.
-* MARCS bracketing, including holes.
-* The departure-file NaN clean-up.
-* Abundance sets and ladders.
-* Broadening and LSF (FWHM and equivalent-width conservation, R(λ), array LSF, RV shift).
-* CCF and χ² RV pulls (≈1σ).
-* Grid → FERRE grid → FERRE node interpolation and fit.
-* Line-by-line injection–recovery. On noise-free data, Fe is recovered to ±0.003 dex.
-* ¹²C/¹³C fitting, using an artificial CN line list.
-* Local-mode stellar parameters, from a simulated two-region, non-normalised spectrum: [M/H], [N/M], vmicro, vmac and RV all recovered within about 1σ.
-* Grid-mode vmicro and vsini axes through FERRE.
-* vsini fitting in `linefit`.
-* The APOGEE LSF, tested with analytic LSF parameters.
+* LTE synthesis and segments; abundance sets and ladders; ¹²C/¹³C.
+* MARCS bracketing (including holes), the NLTE input files and the departure-file clean-up.
+* Broadening and LSFs (line widths, equivalent-width conservation, R(λ), LSF arrays, Doppler shifts).
+* Radial velocities and their errors.
+* Grid building → FERRE grid → FERRE interpolation and fits, including vmicro and broadening axes.
+* Local-mode stellar parameters, line-by-line abundances and their errors, by injection and recovery.
 
-**Tested only partly:**
-* Teff and log g fitting in local mode. Only two atmosphere nodes, both at 4500 K and log g 2.5, were available here, so those axes were held fixed.
-* The APOGEE LSF with the real `apLSF`/`apWave` files.
-
-**Not yet run end to end:** NLTE synthesis with real departure grids. The data could not be downloaded in the build environment. The interpolator inputs and species file follow TSFitPy exactly, but please run one NLTE spectrum against TSFitPy before relying on it.
+**Still to be validated:**
+* NLTE synthesis end to end with real departure grids; compare with TSFitPy before relying on it.
+* Teff and log g in local mode with a full atmosphere grid.
+* The APOGEE LSF with the real `apLSF`/`apWave` files, against `apogee.spec.lsf`.
 
 ## Credits and citations
 

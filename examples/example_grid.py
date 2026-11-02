@@ -1,4 +1,4 @@
-"""Build a CNO grid for FERRE (Bob's build_turbogrid.py, with the LSF step).
+"""Build a CNO grid for FERRE, with the instrument broadening applied on the fly.
 See turbogrid_user_guide.pdf for the whole workflow (collect, fill holes, write)."""
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))

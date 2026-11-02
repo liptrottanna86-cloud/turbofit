@@ -25,6 +25,7 @@ from __future__ import absolute_import
 from __future__ import unicode_literals
 
 import os
+import errno
 import numpy as np
 import sys
 import subprocess
@@ -102,7 +103,7 @@ def marcs2turbo(infile,outfile,trim=0,fill=True):
         try:
             fp = open(infile+'.filled','r')
         except:
-            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), infile)
             return -1
 
     fout = open(outfile,'w')
@@ -119,6 +120,8 @@ def marcs2turbo(infile,outfile,trim=0,fill=True):
                     fout.write(line)
             except :
                 fout.write(line)
+    fp.close()
+    fout.close()
     return 0
 
 def cval(x,digits=2,py2=False) :
@@ -219,7 +222,7 @@ def update_header_metallicity(file,z) :
     out=subprocess.check_output(['grep','TITLE',file])
     old_m_h = out.split()[1].strip('[]')
     subprocess.check_output(['sed','-i',
-       's/\['+old_m_h+'\]/\['+'{:.2f}'.format(z)+'\]/g',file])
+       r's/\['+old_m_h+r'\]/\['+'{:.2f}'.format(z)+r'\]/g',file])
 
     #update ABUNDANCE SCALE
     hole_scale = 10**z

@@ -85,6 +85,7 @@ NODES = dict(teff=(15, 3000., 250.), logg=(12, -0.5, 0.5), mh=(14, -2.5, 0.25),
 ELEMENTS = ['C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'K', 'Ca', 'Ti', 'V',
             'Mn', 'Fe', 'Co', 'Ni', 'Ce', 'C12C13']
 BROADENING = 'vmac'
+FILL_HOLES = True          # missing MARCS node -> nearest model at the same Teff/logg (as ASPCAP)
 FIX_VMICRO = False         # True: hold vmicro at ASPCAP's value (diagnostic run)
 N_JOBS = 16
 CACHE = BASE + '/turbofit_cache'
@@ -213,6 +214,28 @@ def _pick(ids, mjd):
 
 
 _LSF_CACHE = {}
+
+
+def hole_filler(base, step=0.25, maxn=2):
+    """Wrap an atmosphere lookup: if a node is missing, use the nearest model
+    at the same Teff and log g, varying [C/M] first, then [a/M], then [M/H]
+    (up to maxn grid steps). The synthesis still uses the node's abundances."""
+    def lookup(teff, logg, mh, am=0.0, cm=0.0):
+        p = base(teff, logg, mh, am, cm)
+        if p:
+            return p
+        for n in range(1, maxn + 1):
+            for k in ('cm', 'am', 'mh'):
+                for sgn in (-1, 1):
+                    v = dict(mh=mh, am=am, cm=cm)
+                    v[k] = round(v[k] + sgn * n * step, 3)
+                    p = base(teff, logg, v['mh'], v['am'], v['cm'])
+                    if p:
+                        print(f'hole ({teff:.0f}, {logg:+.1f}, {mh:+.2f}, {am:+.2f}, {cm:+.2f}) '
+                              f'filled with {k} {sgn * n * step:+.2f}')
+                        return p
+        return None
+    return lookup
 
 
 def instrument(row, wave):
@@ -466,6 +489,8 @@ def main():
         download(sel)
         return
     lookup = turbogrid.make_atmod_lookup(MARCS_DIR, flat=True)
+    if FILL_HOLES:
+        lookup = hole_filler(lookup)
     for row in sel:
         try:
             run_star(row, lookup)

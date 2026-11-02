@@ -73,7 +73,7 @@ def build_html():
         html = re.sub(r'id="([^"]+)"', lambda m: f'id="{a}-{m.group(1)}"', html)
         html = html.replace('<h1', f'<h1 class="chapter" data-a="{a}"', 1)
         parts.append(f'<section id="{a}">{html}</section>')
-        keep_subs = i > 0 and not f.endswith('11-api-reference.md')
+        keep_subs = i > 0 and not f.endswith('api-reference.md')
         toc.append((a, title, [(f'{a}-{j}', t) for j, t in h2] if keep_subs else []))
 
     toc_html = '<div class="toc"><h1 class="chapter">Contents</h1><ul class="toc1">'

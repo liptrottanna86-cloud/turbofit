@@ -6,10 +6,28 @@ import tempfile
 import time
 import utils, atomic, atmos
 
+
+def make_abundances(mh=0.0, am=0.0, cm=0.0, nm=0.0, elems=None):
+    """Absolute abundances A(X) (H=12) for Z=1..99, as used by synthesize().
+    [alpha/M] applies to O,Ne,Mg,Si,S,Ar,Ca,Ti; elems=[[name,[X/M]],...] override."""
+    abundances = atomic.solar().copy()
+    abundances[2:] += mh
+    abundances[6-1] += cm
+    abundances[7-1] += nm
+    for i in [8,10,12,14,16,18,20,22]:
+        abundances[i-1] += am
+    # Abundance overrides from els, given as [X/M]
+    if elems is not None :
+        for el in elems:
+            atomic_num = atomic.periodic(el[0])
+            abundances[atomic_num-1] = atomic.solar(el[0]) + mh + el[1]
+    return abundances
+
+
 def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
                wrange=[15000.0,17000.0],dw=0.1,atmod=None,atmos_type=None,
                dospherical=True,linelists=None,solarisotopes=None,workdir=None,
-               save=False,verbose=False):
+               save=False,verbose=False,nlte=None,nlte_elems=None,segments=None):
     """
     Code to synthesize a spectrum with Turbospectrum.
     
@@ -56,6 +74,17 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
          created and deleted after the work is done (unless save=True).
     verbose : bool, optional
        Verbose output to the screen.
+    nlte : nlte.NLTEConfig, optional
+       NLTE setup (standard MARCS grid + departure-coefficient grids). Needed
+       only if nlte_elems is given.
+    nlte_elems : list of str, optional
+       Elements to treat in NLTE, e.g. ['Mg','Ca','Fe']. If given, `atmod` is
+       ignored: the atmosphere and departure coefficients are interpolated
+       from the STANDARD MARCS grid by Turbospectrum's interpolator (CNO/alpha
+       atmospheres are not used in NLTE mode).
+    segments : list of (wmin, wmax), optional
+       Compute only these non-overlapping windows (Turbospectrum SEGMENTSFILE),
+       with step ~dw. Much faster than the full wrange for line fitting.
 
     Returns
     -------
@@ -74,23 +103,23 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
     t0 = time.time()
     
     # Default abundances
-    abundances = atomic.solar()
-    abundances[2:] += mh
-    abundances[6-1] += cm
-    abundances[7-1] += nm
-    for i in [8,10,12,14,16,18,20,22]:
-        abundances[i-1] += am
-    # Abundance overrides from els, given as [X/M]
-    if elems is not None :
-        for el in elems:
-            atomic_num = atomic.periodic(el[0])
-            abundances[atomic_num-1] = atomic.solar(el[0]) + mh + el[1]
+    abundances = make_abundances(mh, am, cm, nm, elems)
 
     # Change to temporary directory
     if workdir is None:
         workdir = tempfile.mkdtemp(prefix='turbo')
     cwd = os.getcwd()
     os.chdir(workdir)
+
+    # NLTE: atmosphere + departure coefficients from the standard MARCS grid
+    nlte_info = None
+    if nlte_elems:
+        import nlte as nlte_mod
+        if nlte is None:
+            raise ValueError('nlte_elems given but no nlte=NLTEConfig(...)')
+        atmod, nlte_info = nlte_mod.prepare(nlte, teff, logg, mh, abundances,
+                                            nlte_elems, workdir='.')
+        atmos_type = 'marcs_interpol'
 
     # Identify model atmosphere file type
     if atmos_type is None:
@@ -107,6 +136,7 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
         if os.path.exists(l)==False:
             raise FileNotFoundError(l)
     if os.path.exists(atmod)==False:
+        os.chdir(cwd)
         raise FileNotFoundError(atmod)
 
     # Auto-select 12C/13C ratio from the atmosphere filename's MARCS
@@ -118,9 +148,8 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
         elif base.startswith('s'):
             solarisotopes = False   # spherical -> giant ratio
         else:
-            print('Warning: could not infer p/s from atmod filename '
-                  '{:s}; defaulting to giant isotope ratio'.format(atmod))
-            solarisotopes = False
+            # e.g. interpolated (NLTE) models: decide from logg instead
+            solarisotopes = logg > 3.001
 
     if dospherical and ('marcs' in atmos_type) and logg <= 3.001:
         spherical= True
@@ -129,7 +158,8 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
     flux,cont,wave = do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,
                                   save=save,solarisotopes=solarisotopes,
                                   babsma=None,atmos_type=atmos_type,
-                                  spherical=spherical,vmicro=vmicro,tfactor=1.0)
+                                  spherical=spherical,vmicro=vmicro,tfactor=1.0,
+                                  nlte_info=nlte_info,segments=segments)
 
     os.chdir(cwd)
     if not save:
@@ -143,7 +173,8 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
     
 def do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,save=False,
                solarisotopes=False,babsma=None,atmos_type='marcs',
-               spherical=True,vmicro=2.0,tfactor=1.0,verbose=False):
+               spherical=True,vmicro=2.0,tfactor=1.0,verbose=False,
+               nlte_info=None,segments=None):
     """
     Runs Turbospectrum for specified input parameters.
 
@@ -179,6 +210,10 @@ def do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,save=False,
        Save temporary directory and files for synthesis.  Default=False.
     verbose : bool, optional
        Verbose output to the screen.
+    nlte_info : str, optional
+       Turbospectrum NLTE info file (from nlte.prepare()); switches bsyn to NLTE.
+    segments : list of (wmin, wmax), optional
+       Non-overlapping windows to compute instead of the full wrange.
 
     Returns
     -------
@@ -198,8 +233,10 @@ def do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,save=False,
 
     # Turbospectrum setup
     datadir = utils.datadir()
-    os.symlink(datadir,'./DATA')
-    shutil.copy(atmod,'./'+os.path.basename(atmod))
+    if not os.path.exists('./DATA'):
+        os.symlink(datadir,'./DATA')
+    if not os.path.exists('./'+os.path.basename(atmod)):
+        shutil.copy(atmod,'./'+os.path.basename(atmod))
     
     if verbose:
         stdout = None
@@ -262,6 +299,18 @@ def do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,save=False,
     # Create bsyn control file
     bsynfile = root
     fout = open(bsynfile+'.inp','w')
+    if nlte_info is not None:
+        fout.write("'NLTE :'  '.true.'\n")
+        fout.write("'NLTEINFOFILE:'  '{:s}'\n".format(nlte_info))
+    if segments is not None:
+        # NB: no 'RESOLUTION:' keyword -- TS v20.1 reads it with an (a) format
+        # (garbage value), so we rely on its default R=500000 sampling per
+        # segment, which is finer than any instrument we resample to.
+        with open(root+'_segments.txt','w') as fseg:
+            fseg.write('; wmin wmax\n')
+            for s0,s1 in sorted(segments):
+                fseg.write('{:12.4f} {:12.4f}\n'.format(s0,s1))
+        fout.write("'SEGMENTSFILE:'  '{:s}'\n".format(root+'_segments.txt'))
     fout.write("'LAMBDA_STEP:'  '{:8.3f}'\n".format(dw))
     fout.write("'LAMBDA_MIN:'   '{:12.3f}'\n".format(welem.min()))
     fout.write("'LAMBDA_MAX:'   '{:12.3f}'\n".format(welem.max()))

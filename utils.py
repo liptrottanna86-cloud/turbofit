@@ -1,9 +1,13 @@
 import os
+import gzip
 import numpy as np
 
 # The data directory
 def datadir():
-    """ Return the data/ directory."""
+    """ Return the Turbospectrum DATA/ directory: $TURBOSPEC_DIR/DATA if the
+    TURBOSPEC_DIR environment variable is set, else data/ next to this file."""
+    if os.environ.get('TURBOSPEC_DIR'):
+        return os.path.join(os.environ['TURBOSPEC_DIR'], 'DATA') + '/'
     fil = os.path.abspath(__file__)
     codedir = os.path.dirname(fil)
     datadir = codedir+'/data/'

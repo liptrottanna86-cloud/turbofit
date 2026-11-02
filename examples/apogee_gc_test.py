@@ -46,14 +46,14 @@ import apogee_lsf
 
 BASE = '/mnt/aridata1/users/arialipt'
 D = BASE + '/apogee_dr17'                     # where get_apogee.sh puts the files
-GC_VAC = D + '/VAC_GC_DR17_synspec_rev1-v1_1.fits'
+GC_VAC = D + '/GC_members_VAC-v1_1.fits'
 ALLSTAR = D + '/allStar-dr17-synspec_rev1.fits'
 ALLVISIT = D + '/allVisit-dr17-synspec_rev1.fits'
 APSTAR = D + '/stars/{telescope}/{field}/apStar-dr17-{apogee_id}.fits'   # filled by 'download'
 SAS_URL = 'https://data.sdss.org/sas/dr17/apogee/spectro/redux/dr17/stars/{telescope}/{field}/apStar-dr17-{apogee_id}.fits'
 
 # LSF / wavelength-solution files per telescope (directory, lsfid, waveid)
-LSF_DIR = os.environ.get('APOGEE_LSF_DIR', '/users/arialipt/turbofit/apLSF_apWave_files')
+LSF_DIR = os.environ.get('APOGEE_LSF_DIR', BASE + '/apogee_dr17/lsf')
 LSF = {
     'apo25m': dict(datadir=LSF_DIR, lsfid='05440020', waveid='02420038'),
     'lco25m': dict(datadir=LSF_DIR, lsfid=None, waveid=None),   # set if you use LCO stars

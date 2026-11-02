@@ -464,10 +464,13 @@ class LineFitter:
             nl = [e for e in elements if e in self._nlte_ok] or None
             if nl is None:
                 raise ValueError('automask needs atmosphere nodes, or NLTE data for at least one element')
+        # 'X removed': -9 dex in LTE; in NLTE stay inside the departure grids
+        # (which span about -2..+1 dex), so use -1.9 (lines ~80x weaker)
+        xoff = -9.0 if nl is None else -1.9
         sets = [[]]
         for el in elements:
             b = abund.base_xm(el, kw['am'], kw['cm'], kw['nm'], kw['elems'])
-            sets += [[[el, b + dx]], [[el, -9.0]]]
+            sets += [[[el, b + dx]], [[el, xoff if (nl is None or el not in nl) else b - 1.9]]]
         # split the range over n_jobs processes
         n = max(1, self.n_jobs)
         edges = np.linspace(wrange[0], wrange[1], n + 1)
@@ -632,6 +635,10 @@ class LineFitter:
         """
         star = dict(star)
         elems = list(star.get('elems') or [])
+        if mask is None:
+            if elements is None:
+                raise ValueError('give elements or mask')
+            mask = self.automask(elements, star, wave)
         if vmac == 'global':
             res = self._fit_pass(wave, flux, err, star, elements, mask, {}, True, self.vmac,
                                  False, False, min_pix)

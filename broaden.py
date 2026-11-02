@@ -142,7 +142,10 @@ def lsf_matrix(wave_in, wave_out, R=None, lsf=None, lsf_offsets=None,
         callable lsf(dlam, lam) -> kernel weights at wavelength offsets dlam
         (A) from output wavelength lam; needs lsf_halfwidth (A).
         2D array of shape (n_out, n_k): kernel for each output pixel, sampled
-        at lsf_offsets (n_k, in units of OUTPUT pixels, e.g. -7..7).
+        at lsf_offsets (n_k, in units of OUTPUT pixels). The kernel is linearly
+        interpolated between offsets, so sample it finely (<= 0.2 pixel, e.g.
+        np.arange(-7, 7.01, 0.1)): at 1-pixel sampling the interpolation
+        widens a ~1-pixel-sigma LSF by ~8%, which a fitted vmac absorbs.
     pixel_integrate : bool
         Also average the kernel over each output pixel's width (use when the
         LSF is given per unit wavelength but the detector pixel is not

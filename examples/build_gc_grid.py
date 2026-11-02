@@ -76,14 +76,16 @@ COMMON = dict(
     am=(4, -0.25, 0.25),                     # -0.25 .. +0.50
     cm=(7, -1.0, 0.25),                      # -1.00 .. +0.50
     nm=(6, -0.5, 0.5),                       # -0.50 .. +2.00
-    vmicro=(3, 0.0, 0.2),                    # log10: 1.00, 1.58, 2.51 km/s
+    vmicro=(4, -0.2, 0.2),                   # log10: 0.63, 1.00, 1.58, 2.51 km/s (4 points:
+                                             #   lets FERRE interpolate cubically)
 )
 GRID_DEFS = {
     'M':  dict(teff=[float(t) for t in range(3000, 4001, 100)], logg=(6, -0.5, 0.5), **COMMON),
     'GK': dict(teff=[float(t) for t in range(3500, 5501, 250)], logg=(8, 0.0, 0.5), **COMMON),
 }
 INSTRUMENT = None     # None (unconvolved, add later with `convolve`), 'lsf', or R (e.g. 22500)
-VMAC = [4.0]          # km/s; one value = fixed, several (e.g. [2., 4., 8.]) = a FERRE axis
+VMAC = [4.0]          # km/s, fixed in the grid (fitted per star in the abundance stage);
+                      # several values (e.g. [2., 4., 8.]) make it a FERRE axis (3x size)
 WRANGE = (15080.0, 17010.0)                  # synthesis range (apStar + margins)
 DW = 0.05                                    # synthesis step (A)
 

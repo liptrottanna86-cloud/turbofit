@@ -83,9 +83,6 @@ mask = lf.automask(['C', 'N', 'O', 'Mg', 'Al', 'Fe'], star, wave,
 linefit.write_mask(mask, 'star1_mask.txt')          # inspect / edit / reuse
 ```
 
-![automask](img/automask.png)
-
-*How `automask` chooses windows: Fe in a 4500 K giant at R = 20 000.*
 
 * **Top:** the star (purple), with [Fe/M] + 0.3 (pink dashed) and with Fe removed (grey dotted).
 * **Bottom:** the Fe response.

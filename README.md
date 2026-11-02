@@ -1,5 +1,7 @@
 # turbofit
 
+*Anna Liptrott, Astrophysics Research Institute, Liverpool John Moores University*
+
 A Python toolkit around [Turbospectrum v20](https://github.com/bertrandplez/Turbospectrum_NLTE) for stellar spectroscopy. It can:
 
 * **synthesise spectra**, either one at a time or many abundance patterns for the same star;
@@ -23,6 +25,7 @@ The CNO-LTE mode never interpolates atmospheres. Spectra are computed at grid no
 * **Automatic line masks for each star and instrument** (`linefit.automask`). The star is synthesised at its parameters (base, [X/M]+Δ, and X removed) and convolved with *your* instrument. Windows are kept where X has a strong response and other species contribute little. This also works for molecular features: C from CO/CN/CH, N from CN, O from OH. Each window records its response and blend fraction.
 * **Measurement errors on every abundance**: from the χ² curvature, an asymmetric χ² profile, and optional Monte Carlo noise refits, plus per-element errors that take the larger of the propagated error and the line-to-line scatter.
 * **Per-line systematic errors at almost no extra cost.** In CNO-LTE mode the bracketing-node spectra are already computed. `d[X/H]/dTeff`, `d/dlogg`, `d/d[M/H]`, `d/d[α/M]` and `d/d[C/M]` therefore come from re-weighting them, without new syntheses. FERRE's uncertainties are propagated into every line and into the element means, treating the lines as correlated.
+* **Carbon isotope ratio.** ¹²C/¹³C can be set per star (`c12c13=`) when synthesising, in grids, or for ladders of ratios. It can also be fitted line by line like an element (`'C12C13'`), with automatic or hand-picked windows.
 * **One LSF treatment everywhere** (`broaden.py`). The same code serves grids, RV and line fits. It accepts a constant R, an R(λ) that varies with wavelength, a callable kernel, or a per-pixel LSF array such as APOGEE's or NIRSpec's. Convolution, Doppler shift and resampling are a single sparse matrix evaluated at each output pixel's own wavelength.
 
 ## Documentation
@@ -41,6 +44,7 @@ The CNO-LTE mode never interpolates atmospheres. Spectra are computed at grid no
 | `broaden.py` | vmac/vsini, R / R(λ) / LSF convolution, Doppler shift, resampling |
 | `turbogrid.py`, `fill_grid_holes.py` | grid building → collection → hole filling → FERRE grid (see `turbogrid_user_guide.pdf`) |
 | `ferre.py` | FERRE driver: resample spectra onto the grid's pixels, write inputs, run FERRE, read results |
+| `apogee_lsf.py` | the real APOGEE LSF (per fiber or combo) at any output grid, for `broaden`, grids and fits |
 | `rv.py` | CCF radial velocity (Zucker 2003 errors) + χ² refinement |
 | `linefit.py` | line-by-line fitting, automatic masks, systematics, plots |
 | `pipeline.py` | RV → FERRE → masks → line-by-line for one star |
@@ -116,6 +120,7 @@ Tested here against Turbospectrum v20.1 (gfortran) and FERRE (GitHub head):
 * Turbospectrum: Alvarez & Plez (1998); Plez (2012); NLTE version Gerber et al. (2023, A&A 669, A43). Cite the NLTE data/model-atom papers listed in Turbospectrum's `public-ref-NLTE-TS.bib`.
 * NLTE interpolation inputs, species file and departure-file clean-up follow **TSFitPy** (Gerber et al. 2023; Storm & Bergemann 2023), GPL-3.
 * Synthesis wrapper based on **David Nidever**'s Turbospectrum Python wrapper; `atmos.py` by **Jon Holtzman** (BSD-3).
+* APOGEE LSF evaluation adapted from **Jo Bovy**'s `apogee.spec.lsf` (BSD-3), based on APOGEE pipeline code by J. Holtzman and D. Nidever.
 * MARCS: Gustafsson et al. (2008). FERRE: Allende Prieto et al. (2006).
 * RV errors: Zucker (2003).
 

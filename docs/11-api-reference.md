@@ -4,22 +4,28 @@ Arguments are listed with their defaults. Full descriptions are in each function
 
 ## synthesis
 
-**`synthesize(teff, logg, mh=0.0, am=0.0, cm=0.0, nm=0.0, vmicro=2.0, elems=None, wrange=[15000, 17000], dw=0.1, atmod=None, atmos_type=None, dospherical=True, linelists=None, solarisotopes=None, workdir=None, save=False, verbose=False, nlte=None, nlte_elems=None, segments=None)`**
+**`synthesize(teff, logg, mh=0.0, am=0.0, cm=0.0, nm=0.0, vmicro=2.0, elems=None, wrange=[15000, 17000], dw=0.1, atmod=None, atmos_type=None, dospherical=True, linelists=None, solarisotopes=None, workdir=None, save=False, verbose=False, nlte=None, nlte_elems=None, segments=None, c12c13=None)`**
 Returns `(flux, cont, wave)`.
 
 **`make_abundances(mh=0.0, am=0.0, cm=0.0, nm=0.0, elems=None)`**
 Returns the A(X) array for Z = 1…99 (index Z−1).
 
-**`do_turbospec(root, atmod, linelists, mh, am, abundances, wrange, dw, save=False, solarisotopes=False, babsma=None, atmos_type='marcs', spherical=True, vmicro=2.0, tfactor=1.0, verbose=False, nlte_info=None, segments=None)`**
+**`do_turbospec(root, atmod, linelists, mh, am, abundances, wrange, dw, save=False, solarisotopes=False, babsma=None, atmos_type='marcs', spherical=True, vmicro=2.0, tfactor=1.0, verbose=False, nlte_info=None, segments=None, c12c13=None)`**
 The low-level babsma + bsyn run in the current directory.
+
+**`isotope_block(solarisotopes=False, c12c13=None)`**
+The Turbospectrum `ISOTOPES` lines for carbon.
 
 ## abund
 
-**`synthesize_sets(teff, logg, mh=0.0, am=0.0, cm=0.0, nm=0.0, vmicro=2.0, abund_sets=([],), elems=None, wrange=(15000, 17000), dw=0.1, atmod=None, atmos_type=None, dospherical=True, linelists=None, solarisotopes=None, segments=None, nlte=None, nlte_elems=None, rerun_babsma=True, workdir=None, save=False)`**
+**`synthesize_sets(teff, logg, mh=0.0, am=0.0, cm=0.0, nm=0.0, vmicro=2.0, abund_sets=([],), elems=None, wrange=(15000, 17000), dw=0.1, atmod=None, atmos_type=None, dospherical=True, linelists=None, solarisotopes=None, segments=None, nlte=None, nlte_elems=None, rerun_babsma=True, workdir=None, save=False, c12c13=None)`**
 Returns `(wave, flux[nset, npix], cont[nset, npix])`.
 
 **`ladder(teff, logg, elem, offsets=(-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6), mh=0.0, am=0.0, cm=0.0, nm=0.0, elems=None, **kw)`**
 Returns `(xm, wave, flux, cont)`.
+
+**`isotope_ladder(teff, logg, ratios=(4, 6, 8, 10, 15, 20, 30, 50, 90), **kw)`**
+Returns `(ratios, wave, flux, cont)`.
 
 **`base_xm(elem, am=0.0, cm=0.0, nm=0.0, elems=None)`**
 The starting [X/M] of an element.
@@ -47,6 +53,21 @@ Returns a sparse matrix of shape `(n_out, n_in)`.
 Stellar broadening on the input grid.
 
 **`doppler(wave, rv)`**, **`output_grid(wave, dw_out=None, dlogw_out=None, wrange=None)`**, **`rotation_kernel(dlnw, vsini, eps=0.6)`**
+
+## apogee_lsf
+
+**`ApogeeLSF(datadir=None, lsfid='05440020', waveid='02420038')`**
+`datadir` defaults to `$APOGEE_LSF_DIR`.
+
+* `.inst(wave_out, fiber='combo', offsets=None)` returns `dict(lsf=..., lsf_offsets=...)`.
+* `.lsf_array(wave_out, fiber='combo', offsets=None)` returns `(lsf[n_out, n_k], offsets)`.
+* `.wave2pix(wave, chip, fiber=300)`
+
+**`apStarWavegrid()`**
+The 8575-pixel apStar log-λ grid.
+
+**`raw(x, xcenter, params)`**, **`unpack_lsf_params(lsfarr)`**
+Low-level LSF evaluation.
 
 ## rv
 
@@ -80,6 +101,8 @@ Returns `(star, star_err)`.
 * `.fit(wave, flux, err, star, elements=None, mask=None, star_err=None, vmac='global', iterate=1, sys_vmicro=False, sys_nlte=False, min_pix=4, profile=True, mc=0, seed=None)` returns a `LineFitResult`.
 * `.mode(elem)` returns `'CNO-LTE'` or `'NLTE'`.
 
+Use the pseudo-element `'C12C13'` (`linefit.ISO`) in `elements` or in masks to fit log₁₀(¹²C/¹³C), and `star['c12c13']` to set the ratio. `linefit.default_c12c13(star)` and `linefit.base_value(el, star)` give the starting values.
+
 **`LineFitResult`**
 
 * Attributes: `.lines`, `.summary`, `.vmac`.
@@ -99,7 +122,7 @@ Returns a dict with keys `rv, rv_err, ferre, star, star_err, mask, lines`.
 
 ## turbogrid (new or changed arguments only)
 
-**`write_grid_table(..., nlte=None, nlte_elems=None, broaden_kw=None)`**
+**`write_grid_table(..., nlte=None, nlte_elems=None, broaden_kw=None, c12c13=None)`**
 
 **`nlte_atmod_lookup(teff, logg, mh, am=0.0, cm=0.0)`**
 Returns `'nlte'`.

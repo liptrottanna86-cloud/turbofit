@@ -51,7 +51,37 @@ With none of them, the output stays on the input grid (shifted if `rv` is set). 
 
 `broaden.doppler(wave, rv)` uses the relativistic formula λ_obs = λ·√((1+β)/(1−β)). With `rv` given, the model is shifted to the observed frame *before* the LSF is applied, so the LSF stays defined in the detector frame.
 
-## 4.5 How accurate is it?
+## 4.5 The APOGEE LSF
+
+`apogee_lsf.py` evaluates the real APOGEE line-spread function at any output wavelength grid, for one fiber or the "combo" average. It has a Gauss–Hermite core plus wings, varies along each detector, and is integrated over the detector pixel. The result plugs straight into `broaden`, grids and line fits:
+
+```python
+import apogee_lsf, broaden
+alsf = apogee_lsf.ApogeeLSF('/data/apogee_lsf')     # or set $APOGEE_LSF_DIR
+wave = apogee_lsf.apStarWavegrid()                   # 8575 log-λ pixels, vacuum
+
+inst = alsf.inst(wave, fiber='combo')                # dict(lsf=..., lsf_offsets=...)
+w, f = broaden.convolve(wsyn, fsyn, wave_out=wave, vmac=4.0, **inst)
+```
+
+`ApogeeLSF` needs the six APOGEE calibration files, from the APOGEE data products or the `apogee` package:
+
+* `apLSF-a/b/c-05440020.fits`;
+* `apWave-a/b/c-02420038.fits`.
+
+Other IDs can be passed as `lsfid=` and `waveid=`.
+
+Details:
+
+* `fiber` is `'combo'` (fibers 50, 100, …, 300 averaged), a single fiber 1–300, or a list of fibers to average.
+* The LSF is sampled at 0.1-pixel offsets from −7 to +7 output pixels by default (`offsets=`).
+* Rows that fall in chip gaps or off the detectors take the nearest valid row, so the convolution is defined everywhere. Mask those pixels in the data as usual.
+* The profile already includes the detector pixel, so do **not** add `pixel_integrate=True`.
+* turbofit's vmac is the Gaussian 1/e half-width (σ = vmac/√2). In Bovy's `apogee.spec.lsf`, `vmacro` is a FWHM; a FWHM of F there corresponds to vmac ≈ F/1.665 here.
+
+The LSF evaluation is adapted from `apogee.spec.lsf` (J. Bovy, BSD-3), which is based on the APOGEE reduction code by J. Holtzman and D. Nidever. The adapted code was checked against analytic Gaussian LSF parameters: the second moment of the evaluated rows matches the expected σ² + 1/12 pixel² (pixel integration), converted to output pixels, to 0.1 %, on all three chips. With real APOGEE files it has not been checked against Bovy's original output.
+
+## 4.6 How accurate is it?
 
 The following were checked numerically:
 

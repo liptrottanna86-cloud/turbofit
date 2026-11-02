@@ -53,6 +53,21 @@ The older `R_out`, `dw_out` and `wout` options still work. `broaden_kw` takes pr
 > [!TIP]
 > Make `wrange` a few resolution elements wider than the range you want in the output, so convolution edge effects fall outside it.
 
+### The APOGEE LSF on the apStar grid
+
+```python
+import apogee_lsf
+alsf = apogee_lsf.ApogeeLSF('/data/apogee_lsf')
+wave = apogee_lsf.apStarWavegrid()
+broaden_kw = dict(wave_out=wave, **alsf.inst(wave, fiber='combo'))
+```
+
+The resulting grid is log-λ, so `write_ferre_grid()` writes `LOGW = 1` (5.4).
+
+### A fixed ¹²C/¹³C for the whole grid
+
+`write_grid_table(..., c12c13=8.)` uses that ratio for every spectrum. Without it, the `solarisotopes` default of `synthesize()` applies.
+
 ## 5.3 NLTE grids
 
 ```python

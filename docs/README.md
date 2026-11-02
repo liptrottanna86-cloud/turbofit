@@ -1,5 +1,7 @@
 # turbofit user guide
 
+*Anna Liptrott, Astrophysics Research Institute, Liverpool John Moores University*
+
 turbofit is a Python toolkit around **Turbospectrum v20**. It covers:
 
 * synthesising spectra, one at a time or many abundance patterns per star;
@@ -20,13 +22,13 @@ For each element you choose how it is synthesised:
 | | chapter | what it covers |
 |---|---|---|
 | 1 | [Installation](01-installation.md) | Turbospectrum, csh, atmospheres, NLTE data, FERRE, environment variables |
-| 2 | [Synthesising spectra](02-synthesis.md) | `synthesize()`, abundances, segments, abundance sets and ladders |
+| 2 | [Synthesising spectra](02-synthesis.md) | `synthesize()`, abundances, ¹²C/¹³C, segments, abundance sets and ladders |
 | 3 | [NLTE](03-nlte.md) | `NLTEConfig`, what happens under the hood, choosing elements |
-| 4 | [Broadening, LSFs and resampling](04-broadening.md) | vmac/vsini, R, R(λ), LSF arrays, Doppler shift, output grids |
+| 4 | [Broadening, LSFs and resampling](04-broadening.md) | vmac/vsini, R, R(λ), LSF arrays, the APOGEE LSF, Doppler shift, output grids |
 | 5 | [Building grids for FERRE](05-grids.md) | turbogrid workflow, on-the-fly LSF, NLTE grids, log-λ grids |
 | 6 | [Radial velocities](06-radial-velocity.md) | CCF and χ² refinement |
 | 7 | [Stellar parameters with FERRE](07-ferre.md) | the FERRE driver, inputs and outputs |
-| 8 | [Line-by-line abundances](08-line-by-line.md) | modes, automatic masks, fitting, measurement and systematic errors, outputs, plots |
+| 8 | [Line-by-line abundances](08-line-by-line.md) | modes, automatic masks, fitting, measurement errors, ¹²C/¹³C, systematic errors, outputs, plots |
 | 9 | [The full pipeline](09-pipeline.md) | RV → FERRE → masks → abundances for one star |
 | 10 | [Troubleshooting and known quirks](10-troubleshooting.md) | errors you may see and what to do |
 | 11 | [API reference](11-api-reference.md) | every public function and its arguments |

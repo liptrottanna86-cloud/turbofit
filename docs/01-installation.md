@@ -91,7 +91,16 @@ print(cfg.available_elements())     # e.g. ['Ca', 'Fe', 'Mg']
 
 NLTE needs line lists whose lines carry **NLTE level labels**. The Gaia-ESO NLTE atomic list on the same keeper page has them (4200–9200 Å). VALD extractions do not, but TSFitPy's `utilities/` can add the labels. Lines without labels are simply computed in LTE.
 
-## 1.5 FERRE (only for stellar parameters)
+## 1.5 APOGEE LSF files (only for the APOGEE LSF)
+
+To use the real APOGEE line-spread function (`apogee_lsf.py`, chapter 4), put these six files in one directory:
+
+* `apLSF-a-05440020.fits`, `apLSF-b-05440020.fits`, `apLSF-c-05440020.fits`;
+* `apWave-a-02420038.fits`, `apWave-b-02420038.fits`, `apWave-c-02420038.fits`.
+
+Then pass that directory to `ApogeeLSF(...)` or set `export APOGEE_LSF_DIR=/path/to/them`.
+
+## 1.6 FERRE (only for stellar parameters)
 
 ```bash
 git clone https://github.com/callendeprieto/ferre
@@ -100,7 +109,7 @@ cd ferre/src && make          # produces ../bin/ferre.x and ../bin/ascii2bin
 
 Pass the path to `ferre.x` as `ferre_exe=` (see [chapter 7](07-ferre.md)).
 
-## 1.6 Quick check
+## 1.7 Quick check
 
 ```python
 import os, sys

@@ -15,11 +15,13 @@
 | `NLTE interpolation failed for X` | MARCS models missing around the star, or the abundance is outside the departure grid | check the MARCS directory; departure grids span about −2…+1 dex around solar-scaled |
 | `FERRE failed, see .../ferre.log` | FERRE never wrote its output file | read the log: grid path, `INTER` larger than the axis sizes allow, or start values outside the grid |
 | `LSF narrower than the model sampling` | model step too coarse for the LSF | synthesise on a finer `dw` |
+| `wave_out does not fall on the APOGEE detectors` | output grid outside the APOGEE range | use the apStar grid, or wavelengths within ~15100–17000 Å (vacuum) |
+| `fitting 12C/13C needs atmosphere nodes` | `C12C13` requested without `nodes`/`atmod_lookup` | isotope fits run in CNO-LTE mode; configure the nodes |
 | `rv_err = nan` | the CCF peak is at the edge of `vmin..vmax`, or the CCF is too flat | widen the range, or check normalisation and template |
 
 ## 10.2 Lines flagged in `linefit`
 
-* **`weak`**: a 0.1 dex change moves the window by less than 3σ. The line is uninformative at this S/N. Raise `min_response` in `automask` or accept fewer lines.
+* **`weak`**: a 0.1 dex change moves the window by less than 3σ (for `C12C13`, a 0.3 dex change in the ratio). The line is uninformative at this S/N. Raise `min_response` in `automask` or accept fewer lines.
 * **`edge`**: the fit sits at the end of the abundance ladder even after extension. Usually the window is badly blended, has the wrong continuum, or contains a defect. Look at the plot.
 * **`poorfit`**: χ²_red > 5. Typical causes are an unmodelled blend, a bad pixel, or a line-list problem. Check `drv` too: large offsets point to misidentified or blended lines.
 

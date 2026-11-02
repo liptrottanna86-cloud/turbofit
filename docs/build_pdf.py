@@ -62,6 +62,7 @@ def build_html():
         if i == 0:
             # the docs index: drop its H1 (the cover replaces it) and its contents table
             txt = re.sub(r'^# .*\n', '', txt, count=1)
+            txt = re.sub(r'^\*Anna Liptrott.*\*\n', '', txt, count=1, flags=re.M)
             txt = re.sub(r'## Contents\n.*?(?=\n## )', '', txt, flags=re.S)
             txt = '# Overview\n' + txt
         html = markdown.markdown(txt, extensions=exts, extension_configs=cfg)
@@ -92,6 +93,8 @@ def build_html():
     <div class="title">turbofit</div>
     <div class="sub">Turbospectrum synthesis, FERRE grids, NLTE<br>and line-by-line abundances
       with CNO model atmospheres</div>
+    <div class="author">Anna Liptrott</div>
+    <div class="inst">Astrophysics Research Institute, Liverpool John Moores University</div>
     <div class="meta">Version 0.1 &middot; {date}</div>
   </div>
   <div class="foot">Synthesis &middot; NLTE &middot; LSFs &middot; FERRE &middot; radial velocities
@@ -146,6 +149,9 @@ img {{ max-width: 100%; display: block; margin: 3mm auto; }}
 .cover .title {{ font-family: 'DejaVu Sans', sans-serif; font-size: 60pt; font-weight: bold;
                 margin: 4mm 0 2mm 0; }}
 .cover .sub {{ font-size: 14pt; line-height: 1.35; }}
+.cover .author {{ margin-top: 14mm; font-family: 'DejaVu Sans', sans-serif; font-size: 15pt;
+                 font-weight: bold; }}
+.cover .inst {{ font-size: 11pt; opacity: 0.92; margin-top: 1mm; }}
 .cover .meta {{ margin-top: 8mm; font-size: 10pt; opacity: 0.9; }}
 .cover .cfig {{ position: absolute; top: 125mm; left: 0; width: 100%; }}
 .toc ul.toc1 {{ padding-left: 0; list-style: none; }}

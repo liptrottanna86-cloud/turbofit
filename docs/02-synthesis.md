@@ -33,6 +33,7 @@ It returns three arrays on Turbospectrum's wavelength grid:
 | `atmod, atmos_type` | atmosphere file; type auto-detected (`'marcs'`, `'kurucz'`, …). For Turbospectrum-format interpolated models pass any type other than `'marcs'`, e.g. `'interpol'` |
 | `dospherical` | spherical radiative transfer for MARCS models with log g ≤ 3 (default `True`) |
 | `solarisotopes` | `None` (default) picks from the model name: `p…` plane-parallel → solar ratios, `s…` spherical → giant ratios (¹²C/¹³C = 15); otherwise from log g |
+| `c12c13` | carbon isotope ratio ¹²C/¹³C (number ratio), e.g. `c12c13=8.`; overrides `solarisotopes` for carbon |
 | `segments` | list of `(wmin, wmax)`: compute only these windows (see below) |
 | `nlte, nlte_elems` | NLTE mode, see [chapter 3](03-nlte.md) |
 | `workdir, save` | where Turbospectrum runs (default: a temporary directory, deleted afterwards unless `save=True`) |
@@ -80,6 +81,21 @@ xm, wave, fluxes, conts = abund.ladder(4500., 2.0, 'Mg', offsets=[-0.4, -0.2, 0,
 ```
 
 `abund.base_xm(elem, am, cm, nm, elems)` gives the starting [X/M] of an element: `am` for α elements, `cm` for C, `nm` for N, the `elems` value if one is given, and 0 otherwise.
+
+### Different ¹²C/¹³C ratios
+
+`abund.isotope_ladder()` gives the same star at several carbon isotope ratios, with everything else fixed:
+
+```python
+ratios, wave, fluxes, conts = abund.isotope_ladder(
+    4500., 2.0, ratios=[4, 6, 8, 10, 15, 20, 30, 50, 90],
+    mh=-0.5, am=0.25, cm=-0.25, nm=0.5, vmicro=1.8,
+    wrange=[15150., 15250.], dw=0.01, atmod=atm, linelists=ll)
+```
+
+Any abundance set can also carry a ratio. `synthesize_sets(..., c12c13=8.)` uses one ratio for every set, and `c12c13=[...]` gives one ratio per set.
+
+The ratio is written to Turbospectrum's `ISOTOPES` block as the fractions ¹²C = r/(1+r) and ¹³C = 1/(1+r), for both babsma and bsyn. Without `c12c13`, carbon follows `solarisotopes`: Turbospectrum's solar mix (¹²C/¹³C ≈ 89.9) or the "giant" value of 15. Only molecular lines labelled with explicit isotopes (e.g. `'0607.013014'` for ¹³C¹⁴N, `'0608.013016'` for ¹³C¹⁶O) respond to the ratio, which is how standard Turbospectrum molecular line lists are labelled.
 
 > [!WARNING]
 > **Continuum opacities are recomputed for every set by default (`rerun_babsma=True`).** bsyn takes the electron pressure from babsma's opacity file. Reusing one file across abundance sets therefore freezes the ionisation balance. In a 4500 K giant, ±0.3 dex in Fe gave normalised-flux errors of **0.09**, and Ti and Ni gave 0.001–0.003. Set `rerun_babsma=False` only for trace elements and small steps; it is about 25 % faster.

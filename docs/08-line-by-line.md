@@ -67,12 +67,11 @@ mask = linefit.read_mask('mg_lines.txt')                    # turbofit format
 mask = linefit.read_mask('fe-lmask.txt', element='Fe')     # TSFitPy format (; comments)
 ```
 
-turbofit format, one window per line, **rest-frame** wavelengths in the same convention as your line lists:
+turbofit format, one window per line, **rest-frame** wavelengths in the same convention as your line lists. The `response` and `blend` columns are optional; `automask` fills them in.
 
 ```
 # element  center  wmin  wmax  response  blend
 Mg   15740.716  15739.900  15741.500   0.0810  0.050
-C    15578.400  15577.950  15578.900   0.0420  0.180
 ```
 
 ### Automatic: built for each star and instrument
@@ -104,7 +103,7 @@ What it does:
 This works the same way for molecular features (C from CO/CN/CH, N from CN, O from OH) as for atomic lines.
 
 > [!TIP]
-> `min_response` is a flux change for +`dx` dex. A sensible value is a few times your noise per pixel, divided by √(pixels per line). Low-S/N spectra want a higher threshold. Lines that end up too weak are flagged `weak` anyway (8.8).
+> `min_response` is a flux change for +`dx` dex. A sensible value is a few times your noise per pixel, divided by √(pixels per line). Low-S/N spectra want a higher threshold. Lines that end up too weak are flagged `weak` anyway (8.9).
 
 ## 8.4 Fitting
 
@@ -171,7 +170,7 @@ These errors describe the noise in your spectrum, so they are only as good as yo
 | `err_mean` | error of the weighted mean from the per-line `err_stat` |
 | `std`, `err_scatter` | line-to-line standard deviation, and `std/√n` |
 | `err_meas` | measurement error of the mean: the larger of `err_mean` and `err_scatter` |
-| `err_sys` | stellar-parameter systematic (8.7), correlated between lines |
+| `err_sys` | stellar-parameter systematic (8.8), correlated between lines |
 | `err_total` | √(`err_meas`² + `err_sys`²) |
 
 Using the larger of the propagated error and the observed scatter means the quoted error of the mean also covers line-to-line problems the noise model does not know about (log gf errors, unmodelled blends, continuum placement).
@@ -189,7 +188,71 @@ Using the larger of the propagated error and the observed scatter means the quot
 
 With 12 realisations the "true scatter" is itself uncertain by about 20 %. The strong and moderate lines agree to within that. The two weakest lines (5414.03 and 5425.30, flagged `weak` at this S/N) differ by up to ~40 % in either direction, because their errors are large and the χ² surface is far from parabolic.
 
-## 8.7 Systematic errors from the stellar parameters
+## 8.7 The carbon isotope ratio ¹²C/¹³C
+
+### Setting the ratio for a star
+
+Put the ratio in the star dictionary:
+
+```python
+star['c12c13'] = 8.
+```
+
+Every synthesis for that star then uses it: abundance ladders, automatic masks and systematics. Without it, the default is solar for log g > 3 and 15 otherwise.
+
+### Fitting the ratio
+
+Fit it like an element, using the pseudo-element name **`'C12C13'`**. The fitted quantity is **log₁₀(¹²C/¹³C)**.
+
+```python
+res = lf.fit(wave, flux, err, star, elements=['C', 'N', 'C12C13'],
+             star_err=star_err, iterate=1)
+s = res.summary['C12C13']
+s['c12c13'], s['c12c13_lo'], s['c12c13_hi']    # ratio and its 1-sigma range
+s['xm'], s['err_meas']                         # log10 ratio and its error
+```
+
+How it works:
+
+* The ladder is in log₁₀(¹²C/¹³C), ±0.6 dex around the star's current ratio by default, and is extended automatically if a fit reaches its end.
+* It is synthesised at the same bracketing atmosphere nodes as the abundances (CNO-LTE mode; molecules are always LTE), so measurement errors (8.6) and parameter systematics (below) come out the same way.
+* The [M/H] systematic is not shifted by −1 for the ratio, because it is not an abundance relative to M.
+* **Fit C and N in the same call with `iterate=1`.** The ¹³C features are ¹³CN, ¹³CO and ¹³CH, so their strength depends on C (and N). The second pass then fits the ratio with the C and N just measured, and the abundances with the ratio just measured.
+* In the results table, rows for `C12C13` have `xm` = log₁₀ ratio, a `c12c13` column with the ratio itself, and `xh` = NaN.
+
+### Choosing the windows
+
+* **Automatic:** `lf.automask(['C12C13'], star, wave)`. The response is the change in the spectrum when the ratio drops by `dx` dex (more ¹³C). The blend fraction compares the line depth with and without ¹³C (ratio 10⁶).
+* **Your own:** list windows under the element name `C12C13` in a turbofit mask file (below), or read a three-column list with `linefit.read_mask(path, element='C12C13')`. Hand-picked and automatic windows can be combined by concatenating the two lists.
+
+```
+# element  center  wmin  wmax
+C12C13     <center>  <wmin>  <wmax>
+```
+
+### What to expect
+
+The ¹³C features are weak, so how well the ratio is constrained depends strongly on resolution, S/N, the band and the ratio itself. Typical cases:
+
+* the ¹³CO bandheads in the K band, or ¹³CN near 8000 Å at high R, constrain it well;
+* the ¹³CO and ¹³CN features in the APOGEE H band are usable at good S/N;
+* low ratios (≲ 20) are much easier than high ones.
+
+Because a 0.1 dex change in the ratio moves the spectrum far less than 0.1 dex in an abundance, a `C12C13` window is flagged `weak` when a 0.3 dex change (a factor of 2 in the ratio) moves it by less than 3σ.
+
+When the ratio is high, χ² often does not rise by 1 on the high side within the ladder. `err_hi` is then `inf`, meaning only a lower limit is measured. Quote it as such.
+
+**Test of the machinery.** No real molecular line list was available in the test environment, so the fit was checked with an **artificial** list: 40 made-up ¹²C¹⁴N lines and their ¹³C¹⁴N counterparts, each about 0.3–0.6 Å redward of its ¹²C line, near 8000–8090 Å. These lines are not physical data and only test the software.
+
+| injected ¹²C/¹³C | noise | windows (automatic / good) | recovered |
+|---|---|---|---|
+| 8 | none | 8 / 3 | 8.03 |
+| 8 | S/N = 100 | 8 / 4 | 7.1 (6.2–8.2) |
+| 25 | S/N = 100 | 8 / 1 | 15.8 (12.0–20.8) |
+
+At a ratio of 25 only one window remained usable and the result is about 2σ low. With so few weak lines, high ratios are poorly constrained, which is the regime described above. Real performance should be checked with your molecular line lists and data.
+
+## 8.8 Systematic errors from the stellar parameters
 
 In **CNO-LTE** mode these cost no extra synthesis. The node spectra are already computed, so for each parameter p in `star_err`:
 
@@ -206,7 +269,7 @@ Optional extras, which need extra syntheses:
 * `sys_vmicro=True`: adds vmicro, from ladders at vmicro ± σ for the dominant node only (two extra ladders per element).
 * `sys_nlte=True`: in NLTE mode, ladders at Teff, log g and [M/H] ± σ (and vmicro). That is six to eight extra ladders per element.
 
-## 8.8 Results
+## 8.9 Results
 
 ```python
 res.summary['Fe']
@@ -223,7 +286,7 @@ res.write('star1_lines.csv')
 | `mode` | `CNO-LTE` or `NLTE` |
 | `xm`, `xh` | [X/M] and [X/H] (= [X/M] + the star's [M/H]); see below for [X/Fe] |
 | `err_stat`, `err_lo`, `err_hi`, `err_mc` | measurement errors on [X/M] (8.6) |
-| `err_sys` | parameter-propagated systematic error on [X/M] (8.7) |
+| `err_sys` | parameter-propagated systematic error on [X/M] (8.8) |
 | `dxh_d<p>` | d[X/H]/dp for each parameter in `star_err` |
 | `drv`, `vmac` | per-line velocity offset and the vmac used |
 | `chi2r`, `npix` | reduced χ² and number of pixels |
@@ -242,7 +305,7 @@ x_fe = res.summary['Mg']['xh'] - res.summary['Fe']['xh']      # [Mg/Fe]
 
 For its error, combine the two statistical errors in quadrature (`err_mean`, or `std`/√n). The [M/H] part of the systematic error largely cancels in the difference, because both elements respond to [M/H] in the same way. The derivatives in `dxh_dmh` show by how much.
 
-## 8.9 Plots
+## 8.10 Plots
 
 ```python
 linefit.plot_lines(res, 'star1_lines.pdf', ncols=4, element='Fe',
@@ -253,7 +316,7 @@ linefit.plot_lines(res, 'star1_lines.pdf', ncols=4, element='Fe',
 
 *Fits to four automatically selected Fe windows (simulated R = 20 000, S/N = 150 spectrum with [Fe/M] = +0.15).*
 
-## 8.10 How well does it work?
+## 8.11 How well does it work?
 
 Tests on simulated spectra (4500 K giant, R = 20 000, VALD atomic lines, 5400–5500 Å):
 

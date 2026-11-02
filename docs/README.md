@@ -37,6 +37,19 @@ For each element you choose how it is synthesised:
     * Individual elements are given as `[X/M]` with `elems=[['Mg', 0.3], ['Al', -0.1]]`.
     * The α elements are O, Ne, Mg, Si, S, Ar, Ca and Ti.
     * Solar abundances are Grevesse et al. (2007), which is also Turbospectrum's default.
+
+## [X/M] or [X/Fe]?
+
+turbofit works in **[X/M]** throughout: in the inputs (`elems`, `am`, `cm`, `nm`) and in the line-by-line results (`xm`). This follows the APOGEE/ASPCAP convention, where [M/H] (FERRE's METALS) is the overall scaling and each element is quoted relative to it.
+
+* `mh` is added to *every* element heavier than He, **Fe included**. So by default [Fe/H] = [M/H] and **[X/M] = [X/Fe]**.
+* An override such as `elems=[['Mg', 0.3]]` means A(Mg) = A☉(Mg) + [M/H] + 0.3, which is [Mg/M] = 0.3.
+* The two differ as soon as Fe gets its own value. That happens when you set it (`elems=[['Fe', 0.1]]`), or when Fe is fitted line by line and `iterate` feeds the measured [Fe/M] back in. Then:
+
+  [X/Fe] = [X/M] − [Fe/M] = [X/H] − [Fe/H]
+
+  In code, `res.summary['X']['xh'] - res.summary['Fe']['xh']`.
+* The results also give `xh` = [X/H] = [X/M] + [M/H], with [M/H] the star's value (from FERRE).
 * **Wavelengths** are in Å. They follow your line lists, so air or vacuum depending on what you use.
 * **Spectra passed to the fitting routines** must be continuum-normalised, with 1σ errors per pixel.
     * Bad pixels can be marked with `err = inf` or `nan`.

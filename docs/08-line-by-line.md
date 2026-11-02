@@ -181,7 +181,7 @@ res.write('star1_lines.csv')
 |---|---|
 | `element, center, wmin, wmax` | the window (rest frame) |
 | `mode` | `CNO-LTE` or `NLTE` |
-| `xm`, `xh` | [X/M] and [X/H] |
+| `xm`, `xh` | [X/M] and [X/H] (= [X/M] + the star's [M/H]); see below for [X/Fe] |
 | `err_stat`, `err_sys` | statistical and parameter-propagated systematic error on [X/M] |
 | `dxh_d<p>` | d[X/H]/dp for each parameter in `star_err` |
 | `drv`, `vmac` | per-line velocity offset and the vmac used |
@@ -192,6 +192,14 @@ res.write('star1_lines.csv')
 | `ok` | not `edge` and not `weak`; only `ok` lines enter `summary` |
 
 Summary means are weighted by 1/err_stat², with a floor of 0.01 dex.
+
+**[X/M] versus [X/Fe].** `xm` is relative to the star's overall [M/H]. That equals [X/Fe] only while Fe sits at [Fe/M] = 0. If Fe is among the fitted elements, quote:
+
+```python
+x_fe = res.summary['Mg']['xh'] - res.summary['Fe']['xh']      # [Mg/Fe]
+```
+
+For its error, combine the two statistical errors in quadrature (`err_mean`, or `std`/√n). The [M/H] part of the systematic error largely cancels in the difference, because both elements respond to [M/H] in the same way. The derivatives in `dxh_dmh` show by how much.
 
 ## 8.8 Plots
 

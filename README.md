@@ -24,6 +24,12 @@ The CNO-LTE mode never interpolates atmospheres. Spectra are computed at grid no
 * **Per-line systematic errors at almost no extra cost.** In CNO-LTE mode the bracketing-node spectra are already computed. `d[X/H]/dTeff`, `d/dlogg`, `d/d[M/H]`, `d/d[α/M]` and `d/d[C/M]` therefore come from re-weighting them, without new syntheses. FERRE's uncertainties are propagated into every line and into the element means, treating the lines as correlated.
 * **One LSF treatment everywhere** (`broaden.py`). The same code serves grids, RV and line fits. It accepts a constant R, an R(λ) that varies with wavelength, a callable kernel, or a per-pixel LSF array such as APOGEE's or NIRSpec's. Convolution, Doppler shift and resampling are a single sparse matrix evaluated at each output pixel's own wavelength.
 
+## Documentation
+
+* **[User guide (Markdown)](docs/README.md)**: installation, synthesis, NLTE, LSFs, grids, RV, FERRE, line-by-line fitting, pipeline, troubleshooting and API reference.
+* **[User guide (PDF)](docs/turbofit_user_guide.pdf)**: the same content as one document. Rebuild it with `python docs/build_pdf.py`.
+* `turbogrid_user_guide.pdf`: the detailed grid-building workflow.
+
 ## Files (flat layout: put the folder on `PYTHONPATH` or run from it)
 
 | file | what |

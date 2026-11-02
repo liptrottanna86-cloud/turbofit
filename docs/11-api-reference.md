@@ -1,0 +1,110 @@
+# 11. API reference
+
+Arguments are listed with their defaults. Full descriptions are in each function's docstring.
+
+## synthesis
+
+**`synthesize(teff, logg, mh=0.0, am=0.0, cm=0.0, nm=0.0, vmicro=2.0, elems=None, wrange=[15000, 17000], dw=0.1, atmod=None, atmos_type=None, dospherical=True, linelists=None, solarisotopes=None, workdir=None, save=False, verbose=False, nlte=None, nlte_elems=None, segments=None)`**
+Returns `(flux, cont, wave)`.
+
+**`make_abundances(mh=0.0, am=0.0, cm=0.0, nm=0.0, elems=None)`**
+Returns the A(X) array for Z = 1…99 (index Z−1).
+
+**`do_turbospec(root, atmod, linelists, mh, am, abundances, wrange, dw, save=False, solarisotopes=False, babsma=None, atmos_type='marcs', spherical=True, vmicro=2.0, tfactor=1.0, verbose=False, nlte_info=None, segments=None)`**
+The low-level babsma + bsyn run in the current directory.
+
+## abund
+
+**`synthesize_sets(teff, logg, mh=0.0, am=0.0, cm=0.0, nm=0.0, vmicro=2.0, abund_sets=([],), elems=None, wrange=(15000, 17000), dw=0.1, atmod=None, atmos_type=None, dospherical=True, linelists=None, solarisotopes=None, segments=None, nlte=None, nlte_elems=None, rerun_babsma=True, workdir=None, save=False)`**
+Returns `(wave, flux[nset, npix], cont[nset, npix])`.
+
+**`ladder(teff, logg, elem, offsets=(-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6), mh=0.0, am=0.0, cm=0.0, nm=0.0, elems=None, **kw)`**
+Returns `(xm, wave, flux, cont)`.
+
+**`base_xm(elem, am=0.0, cm=0.0, nm=0.0, elems=None)`**
+The starting [X/M] of an element.
+
+## nlte
+
+**`NLTEConfig(marcs_dir, nlte_dir, config_file=None, model_atom_dir=None, interpol_dir=None, comp='st')`**
+Methods: `.available_elements()`, `.grid`, `.aux_length(el)`.
+
+**`bracket_models(cfg, teff, logg, mh)`**
+Returns `(list of 8 model paths, family)`.
+
+**`prepare(cfg, teff, logg, mh, abundances, nlte_elems, workdir='.', verbose=False)`**
+Returns `(atmod, nlte_info_file)`.
+
+## broaden
+
+**`convolve(wave, flux, R=None, lsf=None, lsf_offsets=None, lsf_halfwidth=None, wave_out=None, dw_out=None, dlogw_out=None, rv=0.0, vmac=0.0, vsini=0.0, eps=0.6, pixel_integrate=False)`**
+Returns `(wave_out, flux_out)`.
+
+**`lsf_matrix(wave_in, wave_out, R=None, lsf=None, lsf_offsets=None, lsf_halfwidth=None, rv=0.0, nsig=5.0, pixel_integrate=False, nsub=5)`**
+Returns a sparse matrix of shape `(n_out, n_in)`.
+
+**`stellar(wave, flux, vmac=0.0, vsini=0.0, eps=0.6)`**
+Stellar broadening on the input grid.
+
+**`doppler(wave, rv)`**, **`output_grid(wave, dw_out=None, dlogw_out=None, wrange=None)`**, **`rotation_kernel(dlnw, vsini, eps=0.6)`**
+
+## rv
+
+**`ccf_rv(wave, flux, twave, tflux, err=None, vmin=-600.0, vmax=600.0, dv=None, mask=None)`**
+Returns `(rv, rv_err, (v, ccf))`.
+
+**`chi2_rv(wave, flux, err, twave, tflux, v0, half=None, nstep=41, mask=None)`**
+Returns `(rv, rv_err, (v, chi2))`.
+
+## ferre
+
+**`fit(waves, fluxes, errs, rv, grid, ids=None, init=None, workdir='ferre_run', ferre_exe='ferre.x', nthreads=1, extra=None, name='ferre')`**
+Returns `{id: result}`.
+
+**`to_star(result, rv=0.0, vmicro=None)`**
+Returns `(star, star_err)`.
+
+**Lower-level functions:**
+
+* `read_header(path)`
+* `grid_wave(hdr)`
+* `to_grid_pixels(wave, flux, err, rv, hdr, bad_err=1e10)`
+* `write_inputs(workdir, ids, flux, err, hdr, init=None, nthreads=1, name='ferre', extra=None)`
+* `read_output(workdir, ids, hdr, name='ferre')`
+
+## linefit
+
+**`LineFitter(linelists, inst, nodes=None, atmod_lookup=None, atmos_type='marcs', nlte=None, nlte_elems=(), offsets=(-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6), dw=0.02, n_jobs=1, drv_max=5.0, vmac=3.0, vsini=0.0, cont_deg=1, max_extend=2, workdir=None, verbose=True)`**
+
+* `.automask(elements, star, wave_obs, dx=0.3, min_response=0.02, max_blend=0.3, cut=0.25, exclude=None, wrange=None)` returns a list of window dictionaries.
+* `.fit(wave, flux, err, star, elements=None, mask=None, star_err=None, vmac='global', iterate=1, sys_vmicro=False, sys_nlte=False, min_pix=4)` returns a `LineFitResult`.
+* `.mode(elem)` returns `'CNO-LTE'` or `'NLTE'`.
+
+**`LineFitResult`**
+
+* Attributes: `.lines`, `.summary`, `.vmac`.
+* Methods: `.table()` (astropy Table) and `.write(path)`.
+
+**`read_mask(path, element=None)`**, **`write_mask(mask, path)`**
+
+**`plot_lines(res, outfile=None, ncols=4, element=None, colors=('k', 'r'))`**
+
+**`bracket(star, nodes)`**, **`corner_weights(br, point)`**
+The node-cell geometry used by CNO-LTE mode.
+
+## pipeline
+
+**`analyse(wave, flux, err, grid, lf, elements, star_id='star', ferre_exe='ferre.x', workdir='turbofit_run', template_params=None, mask=None, nthreads=1, ferre_extra=None, vmicro=None, rv_range=(-600, 600), **fit_kw)`**
+Returns a dict with keys `rv, rv_err, ferre, star, star_err, mask, lines`.
+
+## turbogrid (new or changed arguments only)
+
+**`write_grid_table(..., nlte=None, nlte_elems=None, broaden_kw=None)`**
+
+**`nlte_atmod_lookup(teff, logg, mh, am=0.0, cm=0.0)`**
+Returns `'nlte'`.
+
+**`write_ferre_grid(...)`**
+Writes `LOGW = 1` automatically for log₁₀-uniform wavelength grids.
+
+For the rest of turbogrid (`make_atmod_lookup`, `make_grid_params`, `run_one`, `build_grid_local`, `write_slurm_array`, `write_parallel_joblist`, `collect_grid`, `convolve_grid_to_R`, `fill_grid_holes`), see `turbogrid_user_guide.pdf`.

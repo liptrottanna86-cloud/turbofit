@@ -1,0 +1,41 @@
+# 10. Troubleshooting and known quirks
+
+## 10.1 Errors you may see
+
+| symptom | likely cause | what to do |
+|---|---|---|
+| `Turbospectrum failed` with `babsma_lu: Command not found` | Turbospectrum executables not on `PATH` | `export PATH=$TURBOSPEC_DIR/exec-gf:$PATH` |
+| `/bin/csh: not found` or the scripts do nothing | no csh | install `tcsh` |
+| `FileNotFoundError` for a line list or atmosphere | wrong path | check `linelists`, `atmod`, `griddir`, and `flat=` in `make_atmod_lookup` |
+| bsyn stops with `NDP too small` or `too many wavelengths` | model has more layers than compiled for, or the range/step is too large | split the range, or raise `NDP`/`lpoint` in `source/spectrum.inc` and recompile |
+| `no atmosphere for corner(s) ...` in `linefit` | a node of the cell around the star is missing | fill holes with `atmos.fill_holes()`, or check the star is inside the nodes |
+| `... outside the atmosphere nodes ...` | the star lies beyond the node range | extend the nodes or drop the star |
+| `none of the requested nlte_elems have NLTE data available` | bin/aux/model-atom files not found | `cfg.available_elements()`; check the layout against `nlte_filenames.cfg` |
+| `interpol_modeles_nlte not found` | the NLTE interpolator is not compiled | see [1.4](01-installation.md) |
+| `NLTE interpolation failed for X` | MARCS models missing around the star, or the abundance is outside the departure grid | check the MARCS directory; departure grids span about −2…+1 dex around solar-scaled |
+| `FERRE failed, see .../ferre.log` | FERRE never wrote its output file | read the log: grid path, `INTER` larger than the axis sizes allow, or start values outside the grid |
+| `LSF narrower than the model sampling` | model step too coarse for the LSF | synthesise on a finer `dw` |
+| `rv_err = nan` | the CCF peak is at the edge of `vmin..vmax`, or the CCF is too flat | widen the range, or check normalisation and template |
+
+## 10.2 Lines flagged in `linefit`
+
+* **`weak`**: a 0.1 dex change moves the window by less than 3σ. The line is uninformative at this S/N. Raise `min_response` in `automask` or accept fewer lines.
+* **`edge`**: the fit sits at the end of the abundance ladder even after extension. Usually the window is badly blended, has the wrong continuum, or contains a defect. Look at the plot.
+* **`poorfit`**: χ²_red > 5. Typical causes are an unmodelled blend, a bad pixel, or a line-list problem. Check `drv` too: large offsets point to misidentified or blended lines.
+
+## 10.3 Known quirks (handled for you)
+
+* **Turbospectrum v20.1's `RESOLUTION` keyword** is read with an `(a)` format and gives a garbage value. turbofit never writes it, so segments use Turbospectrum's default R = 500 000.
+* **Reusing babsma opacities** across abundance changes freezes the electron pressure (errors up to 0.09 in flux for Fe). babsma is rerun by default ([2.2](02-synthesis.md)).
+* **FERRE ends with `STOP 1`**, a non-zero exit status, even after a successful run. Success is judged by the output file.
+* **FERRE's `COVPRINT`** writes the full covariance matrix, not the upper triangle described in the manual.
+* **FERRE rejects starting values exactly on a grid edge.** They are nudged 0.001 inside.
+* **Departure files sometimes contain NaN.** These are replaced as described in [3.4](03-nlte.md).
+
+## 10.4 Getting help
+
+When reporting a problem, include:
+
+* the call;
+* the full traceback;
+* for Turbospectrum failures, the run directory (`save=True, workdir=...` in `synthesize()` keeps it, including the `*_babsma.log` and `*_bsyn.log` files).

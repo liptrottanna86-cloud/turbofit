@@ -52,6 +52,25 @@ import synthesis, broaden, linefit
 
 `make_atmod_lookup` converts each needed model once and caches the converted copy in `griddir/_turbo_cache`. It also uses the `*.filled` stand-ins written by `atmos.fill_holes()` for missing nodes.
 
+**Holes in the grid.** `marcs_fill.py` fills missing nodes without touching the original grid. Each missing model is interpolated between the two closest models that bracket it along one axis ([M/H], [α/M], [C/M], log g or Teff), layer by layer on the Rosseland optical-depth scale; where no bracketing pair exists, the nearest model is used instead. Filled models go to a separate directory, with a report of how each was made:
+
+```bash
+python marcs_fill.py --grid /data/marcs_apogee --out /data/marcs_apogee_filled \
+    --teff=2800:4000:100,4250:8000:250 --logg=-0.5:5:0.5 --mh=-2.5:1:0.25 \
+    --am=-1:1:0.25 --cm=-1.5:1:0.25 --nproc 16
+```
+
+To use the filled grid in a fit, wrap the lookup:
+
+```python
+import marcs_fill, turbogrid
+filler = marcs_fill.Filler('/data/marcs_apogee', '/data/marcs_apogee_filled', teff_nodes)
+lookup = filler.lookup(turbogrid.make_atmod_lookup('/data/marcs_apogee', flat=True),
+                       turbogrid.make_atmod_lookup('/data/marcs_apogee_filled', flat=True))
+```
+
+Nodes not yet filled are filled on the spot when a fit first needs them.
+
 ## 1.4 NLTE data (only for NLTE mode)
 
 **Step 1: compile the NLTE interpolator** that ships with Turbospectrum.

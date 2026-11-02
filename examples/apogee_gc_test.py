@@ -19,7 +19,7 @@ Steps
 Usage
 -----
     python apogee_gc_test.py list                      # members per cluster
-    python apogee_gc_test.py download                  # their apStar files (login node)
+    python apogee_gc_test.py download                  # their apStar/asStar files (login node)
     python apogee_gc_test.py run M13                   # all selected M13 stars
     python apogee_gc_test.py run M13 --index 4         # one star (job arrays)
     python apogee_gc_test.py collect                   # table + plots
@@ -70,16 +70,16 @@ WAVE_IDS = {
 }
 FIBRES = 'visits'          # 'visits' (fibres of the star's visits) or 'combo'
 
-CLUSTERS = ['47Tuc', 'M71', 'M5', 'M107', 'M13', 'M92']   # as named in GC_NAME
-MEMB_COLS = ['VB_PROB']    # membership probabilities to cut on (all must pass)
-MEMB_MIN = 0.5
-SNR_MIN = 70.
-MAX_PER_CLUSTER = 20       # highest S/N first; None for all
+CLUSTERS = ['Liller1', 'NGC6752']   # as named in GC_NAME
 
-LINELISTS = ['/path/to/turbospec.20180901.atoms_vac',      # TODO: your vacuum line lists
-             '/path/to/turbospec.20180901.molec_vac',
-             '/path/to/Hlinedata_vac']
-MARCS_DIR = '/path/to/marcs_apogee'                         # TODO: APOGEE MARCS (C, alpha, M nodes)
+SNR_MIN = 50.
+MAX_PER_CLUSTER = None       # highest S/N first; None for all
+
+LINELISTS = ['/users/arialipt/turbofit/aplinelists/turbospec.20180901t20.atoms',
+             '/users/arialipt/turbofit/aplinelists/turbospec.20180901t20.Hlinedata',
+             '/users/arialipt/turbofit/aplinelists/turbospec.20180901t20.molec']
+MARCS_DIR = '/mnt/aridata1/users/arialipt/marcs_apogee'                         # APOGEE MARCS (C, alpha, M nodes)
+LINELISTS_AIR = False      # True if the line lists are in air (apStar is vacuum): Fe I at 15207.53 = air, 15211.68 = vacuum
 NODES = dict(teff=(15, 3000., 250.), logg=(12, -0.5, 0.5), mh=(14, -2.5, 0.25),
              am=(7, -1.0, 0.25), cm=(11, -1.5, 0.25))
 ELEMENTS = ['C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'K', 'Ca', 'Ti', 'V',
@@ -115,10 +115,8 @@ def _str(col):
 
 def load_members():
     vac = Table.read(GC_VAC, hdu=1)
-    _need(vac, ['APOGEE_ID', 'GC_NAME'] + MEMB_COLS, 'GC VAC')
+    _need(vac, ['APOGEE_ID', 'GC_NAME'], 'GC VAC')
     ok = np.isin(_str(vac['GC_NAME']), CLUSTERS)
-    for c in MEMB_COLS:
-        ok &= np.nan_to_num(np.asarray(vac[c], float)) >= MEMB_MIN
     vac = vac[ok]
     vac['APOGEE_ID'] = _str(vac['APOGEE_ID'])
     vac['GC_NAME'] = _str(vac['GC_NAME'])
@@ -174,6 +172,9 @@ def read_apstar(row):
         err = np.atleast_2d(h[2].data)[0].astype(float)
         mask = np.atleast_2d(h[3].data)[0].astype(np.int64)
     wave = apogee_lsf.apStarWavegrid()
+    if LINELISTS_AIR:                      # vacuum -> air (Morton 2000)
+        s2 = (1e4 / wave) ** 2
+        wave = wave / (1 + 8.34254e-5 + 2.406147e-2 / (130 - s2) + 1.5998e-4 / (38.9 - s2))
     bad = np.zeros(len(wave), bool)
     for b in BAD_BITS:
         bad |= (mask & (1 << b)) > 0
@@ -258,7 +259,7 @@ def run_star(row, lookup):
         return
     os.makedirs(os.path.dirname(out), exist_ok=True)
     wave, flux, err = read_apstar(row)
-    inst = instrument(row, wave)
+    inst = instrument(row, apogee_lsf.apStarWavegrid())   # LSF on the detector (vacuum) grid
 
     guess = {k: _f(row[c]) for k, c in ASPCAP_PARAMS.items() if k in ('teff', 'logg', 'mh', 'am')}
     guess = {k: v for k, v in guess.items() if v is not None}
@@ -469,6 +470,8 @@ def main():
         try:
             run_star(row, lookup)
         except Exception as e:                  # keep going; note the failure
+            import traceback
+            traceback.print_exc()
             print('FAILED', row['APOGEE_ID'], repr(e))
 
 

@@ -66,13 +66,29 @@ def grid_wave(hdr):
     return w0 + dw * np.arange(npix)
 
 
-def to_grid_pixels(wave, flux, err, rv, hdr, bad_err=1e10):
+def to_grid_pixels(wave, flux, err, rv, hdr, bad_err=1e10, kind='cubic'):
     """Shift an observed spectrum to the rest frame and resample it onto the
-    grid's pixels; uncovered/bad pixels get err = bad_err."""
+    grid's pixels; uncovered/bad pixels get err = bad_err.
+
+    kind : 'cubic' (default) or 'linear'. Linear interpolation smooths the
+    data (it acts like an extra ~pixel-wide kernel), which biases broadening
+    parameters (vsini/vmac/vmicro) when the data are only a few pixels per
+    resolution element; a cubic spline largely avoids that. If your spectra
+    are already in the rest frame on the grid's pixels (e.g. APOGEE apStar
+    with an apStar-sampled grid), no resampling happens at all."""
     gw = grid_wave(hdr)
     wr = np.asarray(wave, float) / broaden.doppler(1.0, rv)
     good = np.isfinite(flux) & np.isfinite(err) & (np.asarray(err) > 0)
-    f = np.interp(gw, wr[good], np.asarray(flux)[good], left=np.nan, right=np.nan)
+    if len(gw) == len(wr) and np.allclose(gw, wr, rtol=1e-9, atol=0):
+        f, e = np.where(good, flux, 1.0).astype(float), np.where(good, err, bad_err).astype(float)
+        return f, e
+    if kind == 'cubic':
+        from scipy.interpolate import CubicSpline
+        f = np.full(len(gw), np.nan)
+        inside = (gw >= wr[good][0]) & (gw <= wr[good][-1])
+        f[inside] = CubicSpline(wr[good], np.asarray(flux, float)[good])(gw[inside])
+    else:
+        f = np.interp(gw, wr[good], np.asarray(flux)[good], left=np.nan, right=np.nan)
     e = np.interp(gw, wr[good], np.asarray(err)[good], left=np.nan, right=np.nan)
     # pixels whose nearest observed pixel was bad
     near = np.interp(gw, wr, good.astype(float), left=0, right=0) < 0.999
@@ -83,7 +99,7 @@ def to_grid_pixels(wave, flux, err, rv, hdr, bad_err=1e10):
 
 
 def write_inputs(workdir, ids, flux, err, hdr, init=None, nthreads=1, name='ferre',
-                 extra=None):
+                 extra=None, fit_labels=None):
     """Write <name>.ipf/.frd/.err/input.nml in workdir. init: list of dicts
     {label: value} (grid-label names) or None (grid centre)."""
     os.makedirs(workdir, exist_ok=True)
@@ -100,12 +116,16 @@ def write_inputs(workdir, ids, flux, err, hdr, init=None, nthreads=1, name='ferr
             for row in arr:
                 f.write(' '.join('{:14.6e}'.format(v) for v in row) + '\n')
     n = len(labs)
-    nml = dict(NDIM=n, NOV=n, INDV=' '.join(str(i + 1) for i in range(n)),
+    if fit_labels is None:
+        indv = list(range(1, n + 1))
+    else:
+        indv = [labs.index(l) + 1 for l in fit_labels]   # others held at their .ipf values
+    nml = dict(NDIM=n, NOV=len(indv), INDV=' '.join(str(i) for i in indv),
                SYNTHFILE_1_="'{}'".format(hdr['path']),
                PFILE=f"'{name}.ipf'", FFILE=f"'{name}.frd'", ERFILE=f"'{name}.err'",
                OPFILE=f"'{name}.spm'", OFFILE=f"'{name}.mdl'",
                ERRBAR=1, COVPRINT=1, INTER=int(min(3, min(npt) - 1)), ALGOR=3, INIT=1,
-               INDINI=' '.join('1' for _ in range(n)), NRUNS=1,
+               INDINI=' '.join('1' for _ in range(len(indv))), NRUNS=1,
                F_FORMAT=0, F_ACCESS=0, NTHREADS=int(nthreads))
     for k, v in (extra or {}).items():
         nml[k.replace('(', '_').replace(')', '_')] = v
@@ -163,16 +183,22 @@ def read_output(workdir, ids, hdr, name='ferre'):
 
 
 def fit(waves, fluxes, errs, rv, grid, ids=None, init=None, workdir='ferre_run',
-        ferre_exe='ferre.x', nthreads=1, extra=None, name='ferre'):
-    """Resample, write, run FERRE, read. Lists of spectra in, {id: result} out."""
+        ferre_exe='ferre.x', nthreads=1, extra=None, name='ferre', fit_labels=None,
+        resample='cubic'):
+    """Resample, write, run FERRE, read. Lists of spectra in, {id: result} out.
+
+    fit_labels : grid labels to fit (default all); the others are held at the
+        values given in init (e.g. fit_labels=['TEFF','METALS',...] with
+        init=[{'LOGG': 2.45}] to fix log g)."""
     hdr = read_header(grid)
     ids = ids or [f'obj{i:05d}' for i in range(len(fluxes))]
     rv = np.broadcast_to(np.atleast_1d(rv), (len(fluxes),))
     F, E = [], []
     for w, f, e, v in zip(waves, fluxes, errs, rv):
-        ff, ee = to_grid_pixels(w, f, e, v, hdr)
+        ff, ee = to_grid_pixels(w, f, e, v, hdr, kind=resample)
         F.append(ff); E.append(ee)
-    write_inputs(workdir, ids, F, E, hdr, init=init, nthreads=nthreads, name=name, extra=extra)
+    write_inputs(workdir, ids, F, E, hdr, init=init, nthreads=nthreads, name=name, extra=extra,
+                 fit_labels=fit_labels)
     res = subprocess.run([ferre_exe], cwd=workdir, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT)
     with open(os.path.join(workdir, name + '.log'), 'wb') as f:
@@ -187,7 +213,9 @@ def fit(waves, fluxes, errs, rv, grid, ids=None, init=None, workdir='ferre_run',
 
 # FERRE label -> turbofit star-dict key
 LABEL2KEY = {'TEFF': 'teff', 'LOGG': 'logg', 'METALS': 'mh', 'ALPHA': 'am', 'C': 'cm',
-             'N': 'nm', 'VMICRO': 'vmicro', 'LOG10VDOP': 'vmicro'}
+             'N': 'nm', 'VMICRO': 'vmicro', 'LOG10VDOP': 'vmicro',
+             'VSINI': 'vsini', 'LGVSINI': 'vsini', 'VMACRO': 'vmac', 'LGVMACRO': 'vmac'}
+LOG_LABELS = ('LOG10VDOP', 'LGVSINI', 'LGVMACRO')
 
 
 def to_star(result, rv=0.0, vmicro=None):
@@ -197,10 +225,12 @@ def to_star(result, rv=0.0, vmicro=None):
         k = LABEL2KEY.get(lab.upper())
         if k is None:
             continue
-        if lab.upper() == 'LOG10VDOP':
+        e = float(result['errors'][lab])
+        if lab.upper() in LOG_LABELS:
             v = 10 ** v
+            e = v * np.log(10) * e          # error propagated to the linear quantity
         star[k] = float(v)
-        err[k] = float(result['errors'][lab])
+        err[k] = float(e)
     star['rv'] = rv
     if 'vmicro' not in star:
         star['vmicro'] = vmicro if vmicro is not None else 2.478 - 0.325 * star.get('logg', 2.5)

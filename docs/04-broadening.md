@@ -35,7 +35,7 @@ The steps, in order:
 Kernels are normalised automatically.
 
 > [!TIP]
-> Sample LSF arrays finely, ≤ 0.2 pixel (e.g. `lsf_offsets=np.arange(-7, 7.01, 0.1)`), because the kernel is linearly interpolated between offsets. At 1-pixel sampling, a σ ≈ 1-pixel LSF is widened by about 8 %. A fitted vmac absorbs this, and abundances are unaffected because equivalent widths are conserved, but vmac is then biased low.
+> Sample LSF arrays finely, ≤ 0.2 pixel (e.g. `lsf_offsets=np.arange(-7, 9.01, 0.1)`), because the kernel is linearly interpolated between offsets. At 1-pixel sampling, a σ ≈ 1-pixel LSF is widened by about 8 %. A fitted vmac absorbs this, and abundances are unaffected because equivalent widths are conserved, but vmac is then biased low.
 
 ## 4.3 Choosing the output grid
 

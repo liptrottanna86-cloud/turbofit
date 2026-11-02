@@ -27,7 +27,8 @@ import rv as rvmod
 
 def analyse(wave, flux, err, grid, lf, elements, star_id='star', ferre_exe='ferre.x',
             workdir='turbofit_run', template_params=None, mask=None, nthreads=1,
-            ferre_extra=None, vmicro=None, rv_range=(-600, 600), **fit_kw):
+            ferre_extra=None, vmicro=None, rv_range=(-600, 600), fit_labels=None,
+            ferre_init=None, params_only=False, **fit_kw):
     """
     Parameters
     ----------
@@ -39,6 +40,9 @@ def analyse(wave, flux, err, grid, lf, elements, star_id='star', ferre_exe='ferr
     vmicro : microturbulence for the line fits (default: from the grid if it
         has a vmicro axis, else Holtzman et al. 2015 vmicro(logg)).
     fit_kw : passed to lf.fit (e.g. vmac='global', iterate=1, sys_vmicro=True).
+    fit_labels / ferre_init : FERRE labels to fit and starting/fixed values
+        (e.g. fit_labels=[...all but 'LOGG'], ferre_init={'LOGG': 2.45}).
+    params_only : stop after FERRE (no masks / line fits; lf may be None).
     """
     os.makedirs(workdir, exist_ok=True)
     hdr = ferre.read_header(grid)
@@ -62,8 +66,12 @@ def analyse(wave, flux, err, grid, lf, elements, star_id='star', ferre_exe='ferr
     # 2) FERRE
     res = ferre.fit([wave], [flux], [err], rv=v, grid=grid, ids=[star_id],
                     workdir=os.path.join(workdir, 'ferre'), ferre_exe=ferre_exe,
-                    nthreads=nthreads, extra=ferre_extra)[star_id]
+                    nthreads=nthreads, extra=ferre_extra, fit_labels=fit_labels,
+                    init=[ferre_init] if ferre_init else None)[star_id]
     star, star_err = ferre.to_star(res, rv=v, vmicro=vmicro)
+    star_err['rv'] = ve
+    if params_only:
+        return dict(rv=v, rv_err=ve, ferre=res, star=star, star_err=star_err)
 
     # 3) masks + 4) line-by-line
     if mask is None:

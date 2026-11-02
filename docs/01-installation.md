@@ -107,7 +107,7 @@ git clone https://github.com/callendeprieto/ferre
 cd ferre/src && make          # produces ../bin/ferre.x and ../bin/ascii2bin
 ```
 
-Pass the path to `ferre.x` as `ferre_exe=` (see [chapter 7](07-ferre.md)).
+Pass the path to `ferre.x` as `ferre_exe=` (see [chapter 9](09-ferre.md)).
 
 ## 1.7 Quick check
 

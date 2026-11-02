@@ -1,6 +1,6 @@
-# 10. Troubleshooting and known quirks
+# 12. Troubleshooting and known quirks
 
-## 10.1 Errors you may see
+## 12.1 Errors you may see
 
 | symptom | likely cause | what to do |
 |---|---|---|
@@ -17,15 +17,20 @@
 | `LSF narrower than the model sampling` | model step too coarse for the LSF | synthesise on a finer `dw` |
 | `wave_out does not fall on the APOGEE detectors` | output grid outside the APOGEE range | use the apStar grid, or wavelengths within ~15100–17000 Å (vacuum) |
 | `fitting 12C/13C needs atmosphere nodes` | `C12C13` requested without `nodes`/`atmod_lookup` | isotope fits run in CNO-LTE mode; configure the nodes |
+| `no atmosphere for node {...}` in `starfit` | a node of the current cell is missing | fill holes (`atmos.fill_holes`), fix that parameter, or start elsewhere |
+| `starfit` flags `teff_at_grid_edge` (etc.) | the best fit wants to go beyond the node range | the parameter is outside your atmosphere grid; treat it as a limit |
+| `starfit` flags `not_converged` | the cell kept moving for `max_iter` iterations | give a better `guess`, raise `max_iter`, or fix a poorly constrained parameter |
+| `starfit` is slow | 288 syntheses per new cell over a wide range | use `segments=` to synthesise only what you fit, fix parameters you know, share a `cache_dir` between stars |
+| grid-mode vsini/vmac biased high | linear resampling of the data | keep `resample='cubic'` (default) in `ferre.fit` |
 | `rv_err = nan` | the CCF peak is at the edge of `vmin..vmax`, or the CCF is too flat | widen the range, or check normalisation and template |
 
-## 10.2 Lines flagged in `linefit`
+## 12.2 Lines flagged in `linefit`
 
 * **`weak`**: a 0.1 dex change moves the window by less than 3σ (for `C12C13`, a 0.3 dex change in the ratio). The line is uninformative at this S/N. Raise `min_response` in `automask` or accept fewer lines.
 * **`edge`**: the fit sits at the end of the abundance ladder even after extension. Usually the window is badly blended, has the wrong continuum, or contains a defect. Look at the plot.
 * **`poorfit`**: χ²_red > 5. Typical causes are an unmodelled blend, a bad pixel, or a line-list problem. Check `drv` too: large offsets point to misidentified or blended lines.
 
-## 10.3 Known quirks (handled for you)
+## 12.3 Known quirks (handled for you)
 
 * **Turbospectrum v20.1's `RESOLUTION` keyword** is read with an `(a)` format and gives a garbage value. turbofit never writes it, so segments use Turbospectrum's default R = 500 000.
 * **Reusing babsma opacities** across abundance changes freezes the electron pressure (errors up to 0.09 in flux for Fe). babsma is rerun by default ([2.2](02-synthesis.md)).
@@ -34,7 +39,7 @@
 * **FERRE rejects starting values exactly on a grid edge.** They are nudged 0.001 inside.
 * **Departure files sometimes contain NaN.** These are replaced as described in [3.4](03-nlte.md).
 
-## 10.4 Getting help
+## 12.4 Getting help
 
 When reporting a problem, include:
 

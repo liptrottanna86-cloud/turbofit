@@ -1,4 +1,4 @@
-# 5. Building grids for FERRE
+# 6. Building grids for FERRE
 
 `turbogrid.py` builds Synple-style grids with Turbospectrum. The whole workflow is described step by step in `turbogrid_user_guide.pdf`:
 
@@ -11,7 +11,7 @@
 
 This chapter covers what is new in turbofit and gives the short version.
 
-## 5.1 The short version
+## 6.1 The short version
 
 ```python
 import numpy as np, turbogrid as tg
@@ -37,7 +37,7 @@ tg.write_ferre_grid('/scratch/me/m31grid/grid_filled.npz', 'gridm31/grid.ferre',
                     resolution=22500, vacuum=1)
 ```
 
-## 5.2 Broadening on the fly with any LSF: `broaden_kw`
+## 6.2 Broadening on the fly with any LSF: `broaden_kw`
 
 `write_grid_table(..., broaden_kw=dict(...))` passes the dictionary straight to `broaden.convolve()` right after each spectrum is synthesised. Only the broadened spectrum is stored. Anything from [chapter 4](04-broadening.md) works:
 
@@ -62,13 +62,13 @@ wave = apogee_lsf.apStarWavegrid()
 broaden_kw = dict(wave_out=wave, **alsf.inst(wave, fiber='combo'))
 ```
 
-The resulting grid is log-λ, so `write_ferre_grid()` writes `LOGW = 1` (5.4).
+The resulting grid is log-λ, so `write_ferre_grid()` writes `LOGW = 1` (6.4).
 
 ### A fixed ¹²C/¹³C for the whole grid
 
 `write_grid_table(..., c12c13=8.)` uses that ratio for every spectrum. Without it, the `solarisotopes` default of `synthesize()` applies.
 
-## 5.3 NLTE grids
+## 6.3 NLTE grids
 
 ```python
 import nlte
@@ -80,14 +80,34 @@ tg.write_grid_table(params, outdir='grid_nlte', ..., nlte=cfg, nlte_elems=['Mg',
 
 `nlte_atmod_lookup` tells turbogrid that each atmosphere will be interpolated from the standard MARCS grid when the point runs. `am` and `cm` then only change the synthesis abundances.
 
-## 5.4 FERRE grids on log-λ pixels
+## 6.4 vmicro and broadening as grid axes (as ASPCAP)
+
+For a grid mode that fits vmicro and the stellar broadening like ASPCAP:
+
+```python
+params = tg.make_grid_params(..., vmicro=(4, -0.3, 0.2), vmicro_log=True,   # 0.5..2.0 km/s
+                             atmod_lookup=lookup)
+tg.write_grid_table(params, ..., broaden_kw=dict(R=22500., dlogw_out=6e-6),
+                    broaden_axis=('vsini', 10 ** np.arange(0.0, 1.81, 0.3)))   # or ('vmac', ...)
+...
+tg.write_ferre_grid('grid_filled.npz', 'grid.ferre',
+                    labels=('teff', 'logg', 'mh', 'cm', 'am', 'nm', 'lgvmicro', 'lgvsini'))
+```
+
+* **`vmicro_log=True`** makes the vmicro axis even in log₁₀ vmicro. The label `'lgvmicro'` is written as `LOG10VDOP`, ASPCAP's name.
+* **`broaden_axis=(name, values)`** adds a vsini or vmac axis at **no extra synthesis cost**. Every synthesised spectrum is broadened with each value, then `broaden_kw` is applied. `collect_grid()` expands the grid and adds the columns `vsini`/`lgvsini` (or `vmac`/`lgvmac`).
+  * Use the log label (`'lgvsini'` → `LGVSINI`, `'lgvmac'` → `LGVMACRO`) with log-spaced values. Values must be > 0 for a log axis.
+  * Disk space grows with the number of broadening values; synthesis time does not.
+* `ferre.to_star()` converts `LOG10VDOP`, `LGVSINI` and `LGVMACRO` back to km/s, with errors propagated.
+
+## 6.5 FERRE grids on log-λ pixels
 
 `write_ferre_grid()` now detects the wavelength grid:
 
 * linear grids get `LOGW = 0` and `WAVE = λ₀ Δλ`;
 * log₁₀-uniform grids (e.g. from `dlogw_out`) get `LOGW = 1` and `WAVE = log₁₀λ₀ Δlog₁₀λ`.
 
-## 5.5 Axis order (verified)
+## 6.6 Axis order (verified)
 
 In the flux block, **the last label in `labels` varies fastest**. This was checked with FERRE itself: pure interpolation at every node of a test grid returned that node's spectrum to within 4 × 10⁻⁴. Use the same `labels` order in `fill_grid_holes.py` and `write_ferre_grid()`.
 

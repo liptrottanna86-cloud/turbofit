@@ -2,13 +2,24 @@
 
 *Anna Liptrott, Astrophysics Research Institute, Liverpool John Moores University*
 
-A Python toolkit around [Turbospectrum v20](https://github.com/bertrandplez/Turbospectrum_NLTE) for stellar spectroscopy. It can:
+An ASPCAP-style spectroscopic analysis that anyone can run, on one spectrum or many, from any spectrograph (e.g. APOGEE, Gaia RVS, FLAMES, JWST NIRSpec), built on [Turbospectrum v20](https://github.com/bertrandplez/Turbospectrum_NLTE):
 
-* **synthesise spectra**, either one at a time or many abundance patterns for the same star;
-* **build grids** for FERRE (Synple-style, Slurm-ready);
-* **fit stellar parameters** with FERRE;
-* **measure radial velocities**;
-* **fit abundances line by line**.
+* **Synthesis**: one spectrum, many abundance patterns, or ¹²C/¹³C ladders.
+* **Stellar parameters**: Teff, log g, [M/H], [α/M], [C/M], [N/M], vmicro and vmac/vsini, in either of two modes:
+  * **local mode**: syntheses on demand around each star, with no grid needed;
+  * **grid mode**: FERRE on a grid you build with turbogrid.
+* **Radial velocities and continuum normalisation.**
+* **Line-by-line abundances and ¹²C/¹³C**, with automatic line masks, measurement errors and stellar-parameter systematics.
+
+There are no empirical calibrations and no instrument presets: you describe your instrument (R, R(λ), an LSF array, or the APOGEE LSF).
+
+```python
+import turbofit, turbogrid
+out = turbofit.analyse(wave, flux, err, linelists=ll, inst=dict(R=22500.),
+                       elements=['C', 'N', 'O', 'Mg', 'Fe', 'C12C13'], mode='local',
+                       nodes=nodes, atmod_lookup=turbogrid.make_atmod_lookup('/data/marcs_apogee', flat=True),
+                       guess=dict(teff=4600, logg=2.2), n_jobs=16, cache_dir='/scratch/me/tf_cache')
+```
 
 You choose the model atmospheres:
 
@@ -21,7 +32,8 @@ The CNO-LTE mode never interpolates atmospheres. Spectra are computed at grid no
 
 ### What it does that other wrappers don't
 
-* **CNO atmospheres and NLTE in one chain.** Stellar parameters come from FERRE on a CNO-node grid. Abundances are then measured in NLTE wherever departure grids exist and in CNO-LTE otherwise. Every abundance records which mode was used.
+* **Stellar parameters without a grid (local mode).** A full-spectrum fit of Teff, log g, [M/H], [α/M], [C/M], [N/M], vmicro and vmac/vsini. It uses syntheses made on demand at the atmosphere nodes around each star and cached for re-use, with the instrument applied at your pixels and the continuum fitted alongside, so no normalisation is needed.
+* **CNO atmospheres and NLTE in one chain.** Stellar parameters come from CNO-node atmospheres (local mode, or FERRE on a CNO-node grid). Abundances are then measured in NLTE wherever departure grids exist and in CNO-LTE otherwise. Every abundance records which mode was used.
 * **Automatic line masks for each star and instrument** (`linefit.automask`). The star is synthesised at its parameters (base, [X/M]+Δ, and X removed) and convolved with *your* instrument. Windows are kept where X has a strong response and other species contribute little. This also works for molecular features: C from CO/CN/CH, N from CN, O from OH. Each window records its response and blend fraction.
 * **Measurement errors on every abundance**: from the χ² curvature, an asymmetric χ² profile, and optional Monte Carlo noise refits, plus per-element errors that take the larger of the propagated error and the line-to-line scatter.
 * **Per-line systematic errors at almost no extra cost.** In CNO-LTE mode the bracketing-node spectra are already computed. `d[X/H]/dTeff`, `d/dlogg`, `d/d[M/H]`, `d/d[α/M]` and `d/d[C/M]` therefore come from re-weighting them, without new syntheses. FERRE's uncertainties are propagated into every line and into the element means, treating the lines as correlated.
@@ -43,11 +55,14 @@ The CNO-LTE mode never interpolates atmospheres. Spectra are computed at grid no
 | `abund.py` | `synthesize_sets()` / `ladder()`: many abundance patterns for one star |
 | `broaden.py` | vmac/vsini, R / R(λ) / LSF convolution, Doppler shift, resampling |
 | `turbogrid.py`, `fill_grid_holes.py` | grid building → collection → hole filling → FERRE grid (see `turbogrid_user_guide.pdf`) |
+| `continuum.py` | pseudo-continuum normalisation (automatic chunks, polynomial, running percentile) |
+| `starfit.py` | **local mode**: full-spectrum stellar parameters with on-demand, cached syntheses |
+| `turbofit.py` | `analyse()`: parameters (local or grid) → masks → abundances for one spectrum |
 | `ferre.py` | FERRE driver: resample spectra onto the grid's pixels, write inputs, run FERRE, read results |
 | `apogee_lsf.py` | the real APOGEE LSF (per fiber or combo) at any output grid, for `broaden`, grids and fits |
 | `rv.py` | CCF radial velocity (Zucker 2003 errors) + χ² refinement |
 | `linefit.py` | line-by-line fitting, automatic masks, systematics, plots |
-| `pipeline.py` | RV → FERRE → masks → line-by-line for one star |
+| `pipeline.py` | the grid-mode chain (RV → FERRE → masks → line-by-line) |
 | `atmos.py`, `atomic.py`, `utils.py` | atmosphere-file utilities (Holtzman), solar abundances, helpers |
 | `examples/` | runnable templates for each of the above |
 
@@ -112,6 +127,15 @@ Tested here against Turbospectrum v20.1 (gfortran) and FERRE (GitHub head):
 * CCF and χ² RV pulls (≈1σ).
 * Grid → FERRE grid → FERRE node interpolation and fit.
 * Line-by-line injection–recovery. On noise-free data, Fe is recovered to ±0.003 dex.
+* ¹²C/¹³C fitting, using an artificial CN line list.
+* Local-mode stellar parameters, from a simulated two-region, non-normalised spectrum: [M/H], [N/M], vmicro, vmac and RV all recovered within about 1σ.
+* Grid-mode vmicro and vsini axes through FERRE.
+* vsini fitting in `linefit`.
+* The APOGEE LSF, tested with analytic LSF parameters.
+
+**Tested only partly:**
+* Teff and log g fitting in local mode. Only two atmosphere nodes, both at 4500 K and log g 2.5, were available here, so those axes were held fixed.
+* The APOGEE LSF with the real `apLSF`/`apWave` files.
 
 **Not yet run end to end:** NLTE synthesis with real departure grids. The data could not be downloaded in the build environment. The interpolator inputs and species file follow TSFitPy exactly, but please run one NLTE spectrum against TSFitPy before relying on it.
 

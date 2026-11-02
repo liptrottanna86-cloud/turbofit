@@ -308,8 +308,9 @@ class StarFitter:
         fixed : dict of parameters to hold fixed (e.g. dict(logg=2.45)).
         fit_rv : refine the RV against the best model between iterations.
         mc : Monte Carlo noise realisations for the errors (0 = covariance only).
-        wrange / segments : rest-frame range (default: the data's range) or
-            windows to synthesise (e.g. to skip regions you do not want to fit).
+        wrange / segments : rest-frame range or windows to synthesise. Default:
+            one segment per contiguous chunk of the data (gaps skipped), with a
+            margin for the RV. Pass segments= to skip regions you do not fit.
         mask : boolean array, True = use pixel (tellurics, bad regions off).
         """
         wave = np.asarray(wave, float); flux = np.asarray(flux, float); err = np.asarray(err, float)
@@ -338,6 +339,18 @@ class StarFitter:
         f_ = broaden.doppler(1.0, rvel or 0.0)
         self.wrange = wrange or (wave[good][0] / broaden.doppler(1.0, 600.) - 3,
                                  wave[good][-1] / broaden.doppler(1.0, -600.) + 3)
+        if segments is None and wrange is None:
+            # synthesise only where there are data (chip gaps, separate gratings
+            # or setups are skipped), with a +-600 km/s margin for the RV
+            segments = [(a / broaden.doppler(1.0, 600.) - 3, b / broaden.doppler(1.0, -600.) + 3)
+                        for a, b in continuum.find_chunks(wave[good])]
+            merged = []
+            for a, b in sorted(segments):
+                if merged and a <= merged[-1][1]:
+                    merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+                else:
+                    merged.append((a, b))
+            segments = merged
         self.segments = segments
         # default synthesis step: ~1 km/s at the blue end, which samples the
         # intrinsic line profiles whatever the instrument

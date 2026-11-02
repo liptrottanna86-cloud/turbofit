@@ -174,7 +174,7 @@ def nlte_atmod_lookup(teff, logg, mh, am=0.0, cm=0.0):
 
 
 def make_grid_params(teff_grid, logg_grid, mh_grid, am=0.0, cm=0.0, nm=0.0,
-                      vmicro=2.0, atmod_lookup=None):
+                      vmicro=2.0, atmod_lookup=None, vmicro_log=False):
     """
     Build the cartesian-product list of grid points.
 
@@ -194,6 +194,11 @@ def make_grid_params(teff_grid, logg_grid, mh_grid, am=0.0, cm=0.0, nm=0.0,
         relation vmicro = 2.478 - 0.325*logg instead of treating it as a
         free grid dimension (one value per teff/logg point, not an axis
         that multiplies the grid size).
+    vmicro_log : bool
+        If True, the vmicro values/triplet are log10(vmicro) (an even axis in
+        log vmicro, as ASPCAP's LOG10VDOP); e.g. vmicro=(4, -0.3, 0.2),
+        vmicro_log=True gives 0.50, 0.79, 1.26, 2.00 km/s. Use the label
+        'lgvmicro' in write_ferre_grid()/fill_grid_holes.py.
     atmod_lookup : callable(teff, logg, mh, am, cm) -> str
         Required. Returns the path to the matching (Turbospectrum-ready)
         atmosphere-model file, or None if there isn't one -- see
@@ -226,6 +231,8 @@ def make_grid_params(teff_grid, logg_grid, mh_grid, am=0.0, cm=0.0, nm=0.0,
     cms, _ = axis_or_fixed(cm)
     nms, _ = axis_or_fixed(nm)
     vmicros = None if holtzman else axis_or_fixed(vmicro)[0]
+    if vmicro_log and vmicros is not None:
+        vmicros = 10 ** vmicros
 
     points = []
     skipped = 0
@@ -256,7 +263,8 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
                       linelists=None, solarisotopes=False, dospherical=True,
                       atmos_type=None, outputs_dir=None, shard_size=1000,
                       R_out=None, dw_out=None, wout=None, elems=None,
-                      nlte=None, nlte_elems=None, broaden_kw=None, c12c13=None):
+                      nlte=None, nlte_elems=None, broaden_kw=None, c12c13=None,
+                      broaden_axis=None):
     """
     Write the grid-point table and shared settings to disk so that
     `run_one()` can be called standalone (from a job script / array
@@ -286,6 +294,13 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
     nlte, nlte_elems : nlte.NLTEConfig and list of elements, optional
         Build an NLTE grid (standard MARCS atmospheres; use
         atmod_lookup=nlte_atmod_lookup in make_grid_params()).
+    broaden_axis : ('vsini' or 'vmac', values), optional
+        An extra grid axis in stellar broadening (km/s), at NO extra synthesis
+        cost: every synthesised spectrum is broadened with each value (after
+        which broaden_kw is applied). collect_grid() then expands the grid and
+        adds the columns '<name>' and 'lg<name>' (log10); use e.g. the label
+        'lgvsini' (LGVSINI, as ASPCAP) with log-spaced values such as
+        10**np.arange(0.0, 1.81, 0.3).
     c12c13 : float, optional
         12C/13C number ratio used for every spectrum of the grid (default:
         the solarisotopes behaviour of synthesize()).
@@ -319,7 +334,7 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
         f.write('# idx ' + ' '.join(cols) + '\n')
         for i, p in enumerate(params):
             f.write('{:d} {teff:.2f} {logg:.3f} {mh:.3f} {am:.3f} {cm:.3f} {nm:.3f} '
-                    '{vmicro:.3f} {atmod}\n'.format(i, **p))
+                    '{vmicro:.6f} {atmod}\n'.format(i, **p))   # 6 dp: keeps log-vmicro axes even
 
     meta = dict(wrange=list(wrange), dw=dw, linelists=linelists,
                 solarisotopes=solarisotopes, dospherical=dospherical,
@@ -332,7 +347,9 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
                 # reset Ne..Ti to 0 so the 'am' axis changes only O
                 elems=elems,
                 nlte=nlte, nlte_elems=list(nlte_elems) if nlte_elems else None,
-                broaden_kw=broaden_kw, c12c13=c12c13)
+                broaden_kw=broaden_kw, c12c13=c12c13,
+                broaden_axis=(None if broaden_axis is None else
+                              (str(broaden_axis[0]), [float(v) for v in broaden_axis[1]])))
     with open(os.path.join(outdir, 'grid_meta.pkl'), 'wb') as f:
         pickle.dump(meta, f)
 
@@ -476,7 +493,20 @@ def run_one(outdir, idx, overwrite=False, verbose=True):
         )
         if np.isscalar(flux) and flux == 0.:
             raise RuntimeError('synthesize() returned a failure sentinel (0.,0.,0.)')
-        if meta.get('broaden_kw'):
+        extra = {}
+        if meta.get('broaden_axis'):
+            # one output spectrum per broadening value (no extra synthesis)
+            bname, bvals = meta['broaden_axis']
+            if bname not in ('vsini', 'vmac'):
+                raise ValueError("broaden_axis name must be 'vsini' or 'vmac'")
+            fl, co, w_out = [], [], None
+            for v in bvals:
+                w_out, fc = broaden.convolve(wave, np.vstack([flux, cont]),
+                                             **dict(meta.get('broaden_kw') or {}, **{bname: v}))
+                fl.append(fc[0]); co.append(fc[1])
+            flux, cont, wave = np.array(fl), np.array(co), w_out
+            extra = dict(bname=bname, bvals=np.array(bvals))
+        elif meta.get('broaden_kw'):
             wave, fc = broaden.convolve(wave, np.vstack([flux, cont]), **meta['broaden_kw'])
             flux, cont = fc[0], fc[1]
         elif meta.get('R_out'):
@@ -494,7 +524,7 @@ def run_one(outdir, idx, overwrite=False, verbose=True):
             wave = w_out
         np.savez(outfile, flux=flux, cont=cont, wave=wave,
                  teff=row['teff'], logg=row['logg'], mh=row['mh'], am=row['am'],
-                 cm=row['cm'], nm=row['nm'], vmicro=row['vmicro'])
+                 cm=row['cm'], nm=row['nm'], vmicro=row['vmicro'], **extra)
         if verbose:
             print(f'[run_one idx={idx}] wrote {outfile}', flush=True)
         if os.path.exists(failfile):
@@ -667,7 +697,8 @@ def collect_grid(outdir, gridfile='grid.npz', require_common_wave=True):
     """
     Gather all finished <outputs_dir>/<shard>/spec_*.npz files into one
     grid file (written to outdir/gridfile) containing:
-        params : structured array (teff, logg, mh, am, cm, nm, vmicro)
+        params : structured array (teff, logg, mh, am, cm, nm, vmicro,
+                 lgvmicro [, vsini/vmac, lgvsini/lgvmac if broaden_axis])
         wave   : 1D wavelength array (shared across all points)
         flux   : 2D array (npoints, npix)
         cont   : 2D array (npoints, npix)
@@ -694,13 +725,24 @@ def collect_grid(outdir, gridfile='grid.npz', require_common_wave=True):
                 'make sure all points used the same wrange/dw, or set '
                 'require_common_wave=False and interpolate afterwards.'
             )
-        params.append((d['teff'], d['logg'], d['mh'], d['am'], d['cm'], d['nm'], d['vmicro']))
-        fluxes.append(d['flux'])
-        conts.append(d['cont'])
+        base = (float(d['teff']), float(d['logg']), float(d['mh']), float(d['am']),
+                float(d['cm']), float(d['nm']), float(d['vmicro']),
+                float(np.log10(d['vmicro'])))
+        if 'bvals' in d.files:
+            bname = str(d['bname'])
+            for k, v in enumerate(d['bvals']):
+                params.append(base + (float(v), float(np.log10(v)) if v > 0 else -np.inf))
+                fluxes.append(d['flux'][k]); conts.append(d['cont'][k])
+        else:
+            bname = None
+            params.append(base)
+            fluxes.append(d['flux']); conts.append(d['cont'])
         used_idx.append(idx)
 
     dtype = [('teff', 'f8'), ('logg', 'f8'), ('mh', 'f8'), ('am', 'f8'),
-             ('cm', 'f8'), ('nm', 'f8'), ('vmicro', 'f8')]
+             ('cm', 'f8'), ('nm', 'f8'), ('vmicro', 'f8'), ('lgvmicro', 'f8')]
+    if bname is not None:
+        dtype += [(bname, 'f8'), ('lg' + bname, 'f8')]
     params_arr = np.array(params, dtype=dtype)
     flux_arr = np.vstack(fluxes)
     cont_arr = np.vstack(conts)
@@ -965,10 +1007,10 @@ def write_ferre_grid(gridfile, ferre_root,
         raise ValueError(f'{(~filled).sum()} grid slots ended up unfilled -- '
                           'this should not happen if the completeness check above passed')
 
-    label_names = [lab.upper() if lab != 'mh' else 'METALS' for lab, _ in axes]
-    label_names = ['ALPHA' if n == 'AM' else n for n in label_names]
-    label_names = ['C' if n == 'CM' else n for n in label_names]
-    label_names = ['N' if n == 'NM' else n for n in label_names]
+    ferre_names = dict(mh='METALS', am='ALPHA', cm='C', nm='N', teff='TEFF', logg='LOGG',
+                       vmicro='VMICRO', lgvmicro='LOG10VDOP', vsini='VSINI',
+                       lgvsini='LGVSINI', vmac='VMACRO', lgvmac='LGVMACRO')
+    label_names = [ferre_names.get(lab, lab.upper()) for lab, _ in axes]
 
     lines = ['&SYNTH']
     lines.append(f" ID = '{comment or os.path.basename(gridfile)}'")

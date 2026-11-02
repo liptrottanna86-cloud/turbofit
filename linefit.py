@@ -293,7 +293,7 @@ class LineFitResult:
     def table(self):
         from astropy.table import Table
         cols = ['element', 'center', 'wmin', 'wmax', 'mode', 'xm', 'xh', 'err_stat',
-                'err_lo', 'err_hi', 'err_mc', 'err_sys', 'drv', 'vmac', 'chi2r', 'npix', 'snr_resp', 'response',
+                'err_lo', 'err_hi', 'err_mc', 'err_sys', 'drv', 'vmac', 'vsini', 'chi2r', 'npix', 'snr_resp', 'response',
                 'blend', 'flags', 'ok']
         t = Table({c: [l[c] for l in self.lines] for c in cols})
         if any(l['element'] == ISO for l in self.lines):
@@ -334,14 +334,16 @@ class LineFitter:
         use Turbospectrum's segment sampling (R=500000).
     n_jobs : parallel Turbospectrum processes.
     drv_max : per-line RV-offset bound (km/s).
-    vmac, vsini : stellar broadening (km/s); vmac is the starting value / the
-        value used by automask (see fit(vmac=...) for how it is fitted).
+    vmac, vsini : stellar broadening (km/s): starting / fixed values.
+    broadening : which one fit(vmac=...) fits: 'vmac' (default) or 'vsini'
+        (for rotating stars). The other is held fixed, at star['vsini'] /
+        star['vmac'] if the star dict has it, else at the value given here.
     cont_deg : per-window continuum polynomial degree (0, 1) or None (none).
     """
 
     def __init__(self, linelists, inst, nodes=None, atmod_lookup=None, atmos_type='marcs',
                  nlte=None, nlte_elems=(), offsets=(-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6),
-                 dw=0.02, n_jobs=1, drv_max=5.0, vmac=3.0, vsini=0.0,
+                 dw=0.02, n_jobs=1, drv_max=5.0, vmac=3.0, vsini=0.0, broadening='vmac',
                  cont_deg=1, max_extend=2, workdir=None, verbose=True):
         self.linelists = list(linelists)
         self.inst = dict(inst)
@@ -356,6 +358,10 @@ class LineFitter:
         self.drv_max = drv_max
         self.vmac = vmac
         self.vsini = vsini
+        if broadening not in ('vmac', 'vsini'):
+            raise ValueError("broadening must be 'vmac' or 'vsini'")
+        self.broadening = broadening
+        self._other = vsini if broadening == 'vmac' else 0.0   # the broadening held fixed
         self.cont_deg = cont_deg
         self.max_extend = max_extend
         self.tmpdir = workdir or tempfile.mkdtemp(prefix='turbofit_')
@@ -390,8 +396,13 @@ class LineFitter:
         return 2.0
 
     def _pad(self, lam):
+        vrot = max(self.vsini, getattr(self, '_other', 0.0),
+                   self._vmax() if self.broadening == 'vsini' else 0.0)
         return (self._lsf_half(lam) + lam * (self.drv_max + 3 * max(self.vmac, 10.0)
-                                             + self.vsini) / C_KMS + 0.3)
+                                             + vrot) / C_KMS + 0.3)
+
+    def _vmax(self):
+        return 30.0 if self.broadening == 'vmac' else 150.0
 
     def _base_kw(self, star):
         return dict(mh=star.get('mh', 0.0), am=star.get('am', 0.0), cm=star.get('cm', 0.0),
@@ -494,9 +505,7 @@ class LineFitter:
         """
         rv = star.get('rv', 0.0)
         wave_obs = np.asarray(wave_obs, float)
-        if wrange is None:
-            wrange = (wave_obs[0] / broaden.doppler(1.0, rv) - 2,
-                      wave_obs[-1] / broaden.doppler(1.0, rv) + 2)
+        wrange_given = wrange is not None
         # atmosphere: nearest CNO node if available, else NLTE/standard MARCS
         kw = self._base_kw(star)
         if self.nodes is not None and self.lookup is not None:
@@ -526,37 +535,59 @@ class LineFitter:
             sets += [[[el, b + dx]], [[el, xoff if (nl is None or el not in nl) else b - 1.9]]]
             ratios += [r0, r0]
         kw['c12c13'] = ratios
-        # split the range over n_jobs processes
+        # synthesise only where there are data: one rest-frame range per data
+        # chunk (gaps such as chip gaps or separate setups are skipped), each
+        # split into pieces so that ~n_jobs processes run in parallel
+        import continuum as _cont
+        f_ = broaden.doppler(1.0, rv)
+        if wrange_given:
+            obs_chunks = [(wrange[0] * f_, wrange[1] * f_)]
+        else:
+            obs_chunks = _cont.find_chunks(wave_obs)
+        rest_chunks = [(a / f_ - 2.0, b / f_ + 2.0) for a, b in obs_chunks]
+        total = sum(b - a for a, b in rest_chunks)
         n = max(1, self.n_jobs)
-        edges = np.linspace(wrange[0], wrange[1], n + 1)
-        jobs = []
-        for i in range(n):
-            jobs.append(dict(kw, teff=tg, logg=lg, sets=sets, atmod=atm, atmos_type=atype,
-                             wrange=(edges[i] - 1.0, edges[i + 1] + 1.0), dw=self.dw,
-                             nlte_elems=nl))
+        jobs, owner = [], []
+        for ic, (a, b) in enumerate(rest_chunks):
+            k = max(1, int(round(n * (b - a) / total)))
+            edges = np.linspace(a, b, k + 1)
+            for i in range(k):
+                jobs.append(dict(kw, teff=tg, logg=lg, sets=sets, atmod=atm, atmos_type=atype,
+                                 wrange=(edges[i] - 1.0, edges[i + 1] + 1.0), dw=self.dw,
+                                 nlte_elems=nl))
+                owner.append((ic, edges[i], edges[i + 1], i == k - 1))
         if self.verbose:
-            print(f'linefit.automask: {len(sets)} syntheses over {wrange[0]:.0f}-{wrange[1]:.0f} A '
-                  f'in {n} chunk(s)')
-        if n > 1:
+            print(f'linefit.automask: {len(sets)} syntheses over {len(rest_chunks)} data chunk(s) '
+                  f'({total:.0f} A) in {len(jobs)} piece(s)')
+        if n > 1 and len(jobs) > 1:
             with ProcessPoolExecutor(max_workers=n) as ex:
                 res = list(ex.map(_sets_worker, jobs))
         else:
-            res = [_sets_worker(jobs[0])]
-        ws, fs = [], []
-        for i, (w, f) in enumerate(res):
-            keep = (w >= edges[i]) & ((w < edges[i + 1]) if i < n - 1 else (w <= edges[i + 1]))
-            ws.append(w[keep]); fs.append(f[:, keep])
-        w = np.concatenate(ws); f = np.concatenate(fs, axis=1)
+            res = [_sets_worker(j) for j in jobs]
 
         inst = {k: v for k, v in self.inst.items()}
-        wo, fo = broaden.convolve(w, f, wave_out=wave_obs, rv=rv, vmac=self.vmac,
-                                  vsini=self.vsini, **inst)
+        vm_b = float(star.get('vmac', self.vmac)); vs_b = float(star.get('vsini', self.vsini))
+        fo = np.full((len(sets), len(wave_obs)), np.nan)
+        for ic, (a, b) in enumerate(obs_chunks):
+            ws, fs = [], []
+            for (oc, e0, e1, last), (w, f) in zip(owner, res):
+                if oc != ic:
+                    continue
+                keep = (w >= e0) & ((w <= e1) if last else (w < e1))
+                ws.append(w[keep]); fs.append(f[:, keep])
+            w = np.concatenate(ws); f = np.concatenate(fs, axis=1)
+            sel = np.nonzero((wave_obs >= a) & (wave_obs <= b))[0]
+            ik = dict(inst)
+            if ik.get('lsf') is not None and not callable(ik['lsf']):
+                ik['lsf'] = np.asarray(ik['lsf'])[sel]
+            _, fo[:, sel] = broaden.convolve(w, f, wave_out=wave_obs[sel], rv=rv, vmac=vm_b,
+                                             vsini=vs_b, **ik)
         base = fo[0]
-        bad = np.zeros(len(wave_obs), bool)
+        bad = ~np.isfinite(base)
         for a, b in (exclude or []):
             bad |= (wave_obs >= a) & (wave_obs <= b)
-        # model can't be trusted where it was extrapolated beyond the synthesis range
-        bad |= (wave_obs < broaden.doppler(w[0], rv) + 1) | (wave_obs > broaden.doppler(w[-1], rv) - 1)
+        fo = np.where(np.isfinite(fo), fo, 1.0)
+        base = fo[0]
 
         dpix = np.median(np.diff(wave_obs))
         fwhm_pix = max(2, int(round(self._lsf_half(np.median(wave_obs)) / 5 * 2.3548 / dpix)))
@@ -636,8 +667,12 @@ class LineFitter:
         def model(p, fdat=fo):
             x, drv, vm = p[0], p[1], (p[2] if fit_vmac else vm0)
             s = spl(x)
-            if vm > 0 or self.vsini > 0:
-                s = broaden.stellar(ws, s, vmac=vm, vsini=self.vsini)
+            if self.broadening == 'vmac':
+                bm, bs = vm, self._other
+            else:
+                bm, bs = self._other, vm
+            if bm > 0 or bs > 0:
+                s = broaden.stellar(ws, s, vmac=bm, vsini=bs)
             M = broaden.lsf_matrix(ws, wo, rv=rv + drv, **inst)
             m = M @ s
             if deg is None:
@@ -650,10 +685,10 @@ class LineFitter:
             return (fdat - model(p, fdat)) / eo
 
         lo = [xm[0], -self.drv_max] + ([0.0] if fit_vmac else [])
-        hi = [xm[-1], self.drv_max] + ([30.0] if fit_vmac else [])
+        hi = [xm[-1], self.drv_max] + ([self._vmax()] if fit_vmac else [])
         xs = [0.1, 1.0] + ([1.0] if fit_vmac else [])
         ds = [1e-3, 1e-3] + ([1e-3] if fit_vmac else [])
-        p0 = [np.clip(x0, xm[0] + 1e-3, xm[-1] - 1e-3), 0.0] + ([np.clip(vm0, 0.1, 29)] if fit_vmac else [])
+        p0 = [np.clip(x0, xm[0] + 1e-3, xm[-1] - 1e-3), 0.0] + ([np.clip(vm0, 0.1, self._vmax() - 1)] if fit_vmac else [])
         if fixed is not None:
             # refit only the abundance, other parameters frozen (systematics)
             def r1(q):
@@ -729,10 +764,13 @@ class LineFitter:
         star_err : dict of 1-sigma errors for systematics, any of teff, logg,
             mh, am, cm (CNO-LTE: free), vmicro (needs sys_vmicro=True), and
             for NLTE elements teff/logg/mh/vmicro (needs sys_nlte=True).
-        vmac : 'global' (default) -- fit vmac per line in a first pass, then
-            fix it to the response-weighted median of the good lines; 'line'
-            -- free per line (degenerate with abundance for weak lines in
-            narrow windows); or a number to fix it.
+        vmac : how the broadening chosen by LineFitter(broadening=...) (vmac
+            by default, or vsini) is treated: 'global' (default) -- fitted per
+            line in a first pass, then fixed to the response-weighted median
+            of the good lines; 'line' -- free per line (degenerate with
+            abundance for weak lines in narrow windows); 'star' -- fixed to
+            star['vmac'] / star['vsini'] (e.g. from starfit or FERRE); or a
+            number to fix it.
         profile : asymmetric measurement errors err_lo / err_hi from the
             chi^2 profile of each line (final pass only; no extra synthesis).
         mc : number of Monte Carlo noise realisations per line (final pass
@@ -745,25 +783,33 @@ class LineFitter:
         """
         star = dict(star)
         elems = list(star.get('elems') or [])
+        kind = self.broadening
+        other = 'vsini' if kind == 'vmac' else 'vmac'
+        self._other = float(star.get(other, self.vsini if other == 'vsini' else 0.0))
+        start = float(star.get(kind, self.vmac if kind == 'vmac' else max(self.vsini, 3.0)))
         if mask is None:
             if elements is None:
                 raise ValueError('give elements or mask')
             mask = self.automask(elements, star, wave)
+        if vmac == 'star':
+            if kind not in star:
+                raise ValueError(f"vmac='star' needs star['{kind}']")
+            vmac = float(star[kind])
         if vmac == 'global':
-            res = self._fit_pass(wave, flux, err, star, elements, mask, {}, True, self.vmac,
+            res = self._fit_pass(wave, flux, err, star, elements, mask, {}, True, start,
                                  False, False, min_pix)
-            v = np.array([l['vmac'] for l in res.lines if l['ok']])
+            v = np.array([l[kind] for l in res.lines if l['ok']])
             wt = np.array([l['snr_resp'] for l in res.lines if l['ok']])
             if len(v):
                 o = np.argsort(v); c = np.cumsum(wt[o]) / np.sum(wt)
                 vglob = float(v[o][np.searchsorted(c, 0.5)])
             else:
-                vglob = self.vmac
+                vglob = start
             if self.verbose:
-                print(f'linefit: global vmac = {vglob:.2f} km/s from {len(v)} lines')
+                print(f'linefit: global {kind} = {vglob:.2f} km/s from {len(v)} lines')
             fit_vmac, vm = False, vglob
         elif vmac == 'line':
-            fit_vmac, vm = True, self.vmac
+            fit_vmac, vm = True, start
         else:
             fit_vmac, vm = False, float(vmac)
         npass = 1 + int(iterate)
@@ -784,7 +830,8 @@ class LineFitter:
             if self.verbose:
                 print('linefit: pass {} abundances '.format(ip + 1) +
                       ' '.join(f'{k}={v:+.3f}' for k, v in done.items()))
-        res.vmac = vm
+        res.vmac = vm if kind == 'vmac' else self._other
+        res.vsini = vm if kind == 'vsini' else self._other
         return res
 
     def _fit_pass(self, wave, flux, err, star, elements, mask, star_err, fit_vmac, vmac0,
@@ -894,7 +941,7 @@ class LineFitter:
                 if rr is None:
                     row.update(xm=np.nan, xh=np.nan, err_stat=np.nan, err_sys=np.nan,
                                err_lo=np.nan, err_hi=np.nan, err_mc=np.nan, drv=np.nan,
-                               vmac=np.nan, chi2r=np.nan, npix=0, snr_resp=np.nan, ok=False,
+                               vmac=np.nan, vsini=np.nan, chi2r=np.nan, npix=0, snr_resp=np.nan, ok=False,
                                flags='nodata', wave=None, flux=None, model=None)
                     lines.append(row)
                     continue
@@ -923,7 +970,9 @@ class LineFitter:
                            err_stat=r['err'],
                            err_lo=r['err_lo'], err_hi=r['err_hi'], err_mc=r['err_mc'],
                            err_sys=np.sqrt(sys2) if sys_cubes else np.nan,
-                           drv=float(r['x'][1]), vmac=float(r['x'][2]) if fit_vmac else vmac0,
+                           drv=float(r['x'][1]),
+                           **{self.broadening: float(r['x'][2]) if fit_vmac else vmac0,
+                              ('vsini' if self.broadening == 'vmac' else 'vmac'): self._other},
                            chi2r=r['chi2r'], npix=len(idx), snr_resp=r['snr_resp'],
                            ok=('edge' not in flags and 'weak' not in flags),
                            flags=','.join(flags), wave=wave[idx], flux=flux[idx],

@@ -62,8 +62,8 @@ The interpolator inputs, species file and NaN handling follow TSFitPy (Gerber et
 
 ## 3.5 NLTE in grids and line fits
 
-* **Grids:** `turbogrid.write_grid_table(..., nlte=cfg, nlte_elems=[...])` with `atmod_lookup=turbogrid.nlte_atmod_lookup`. See [chapter 5](05-grids.md).
-* **Line by line:** give `LineFitter(nlte=cfg, nlte_elems=[...])`. Those elements are then fitted in NLTE when their data are present, and in CNO-LTE otherwise. See [chapter 8](08-line-by-line.md).
+* **Grids:** `turbogrid.write_grid_table(..., nlte=cfg, nlte_elems=[...])` with `atmod_lookup=turbogrid.nlte_atmod_lookup`. See [chapter 6](06-grids.md).
+* **Line by line:** give `LineFitter(nlte=cfg, nlte_elems=[...])`. Those elements are then fitted in NLTE when their data are present, and in CNO-LTE otherwise. See [chapter 10](10-line-by-line.md).
 
 > [!CAUTION]
 > The NLTE path was built and checked piece by piece (bracketing, NaN clean-up, bsyn reading an NLTE species file), but it has **not yet been run end to end with real departure grids**. Before relying on it, compare one NLTE spectrum with TSFitPy for the same star and line.

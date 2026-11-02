@@ -2,13 +2,14 @@
 
 *Anna Liptrott, Astrophysics Research Institute, Liverpool John Moores University*
 
-turbofit is a Python toolkit around **Turbospectrum v20**. It covers:
+turbofit is a Python toolkit around **Turbospectrum v20**, an ASPCAP-style analysis that anyone can run on one spectrum or many, from any spectrograph. It covers:
 
 * synthesising spectra, one at a time or many abundance patterns per star;
-* building FERRE grids;
-* measuring radial velocities;
-* fitting stellar parameters with FERRE;
-* fitting abundances line by line.
+* stellar parameters, either in **local mode** (on-demand syntheses around each star, no grid needed) or in **grid mode** (FERRE on a grid you build);
+* measuring radial velocities and normalising continua;
+* fitting abundances (and ¹²C/¹³C) line by line, with measurement and systematic errors.
+
+There are no empirical calibrations and no instrument presets: you describe your instrument (R, R(λ) or an LSF).
 
 For each element you choose how it is synthesised:
 
@@ -21,17 +22,19 @@ For each element you choose how it is synthesised:
 
 | | chapter | what it covers |
 |---|---|---|
-| 1 | [Installation](01-installation.md) | Turbospectrum, csh, atmospheres, NLTE data, FERRE, environment variables |
+| 1 | [Installation](01-installation.md) | Turbospectrum, csh, atmospheres, NLTE data, APOGEE LSF files, FERRE |
 | 2 | [Synthesising spectra](02-synthesis.md) | `synthesize()`, abundances, ¹²C/¹³C, segments, abundance sets and ladders |
 | 3 | [NLTE](03-nlte.md) | `NLTEConfig`, what happens under the hood, choosing elements |
 | 4 | [Broadening, LSFs and resampling](04-broadening.md) | vmac/vsini, R, R(λ), LSF arrays, the APOGEE LSF, Doppler shift, output grids |
-| 5 | [Building grids for FERRE](05-grids.md) | turbogrid workflow, on-the-fly LSF, NLTE grids, log-λ grids |
-| 6 | [Radial velocities](06-radial-velocity.md) | CCF and χ² refinement |
-| 7 | [Stellar parameters with FERRE](07-ferre.md) | the FERRE driver, inputs and outputs |
-| 8 | [Line-by-line abundances](08-line-by-line.md) | modes, automatic masks, fitting, measurement errors, ¹²C/¹³C, systematic errors, outputs, plots |
-| 9 | [The full pipeline](09-pipeline.md) | RV → FERRE → masks → abundances for one star |
-| 10 | [Troubleshooting and known quirks](10-troubleshooting.md) | errors you may see and what to do |
-| 11 | [API reference](11-api-reference.md) | every public function and its arguments |
+| 5 | [Continuum normalisation](05-continuum.md) | automatic chunks, polynomial and running-percentile continua |
+| 6 | [Building grids for FERRE](06-grids.md) | turbogrid workflow, on-the-fly LSF, vmicro and broadening axes, NLTE grids |
+| 7 | [Radial velocities](07-radial-velocity.md) | CCF and χ² refinement |
+| 8 | [Stellar parameters in local mode](08-local-mode.md) | full-spectrum fit with on-demand syntheses, no grid needed |
+| 9 | [Stellar parameters with FERRE (grid mode)](09-ferre.md) | the FERRE driver, resampling, fixed parameters |
+| 10 | [Line-by-line abundances](10-line-by-line.md) | modes, masks, fitting, broadening, errors, ¹²C/¹³C, systematics |
+| 11 | [Analysing a star](11-analysis.md) | `turbofit.analyse()`: local or grid mode → masks → abundances |
+| 12 | [Troubleshooting and known quirks](12-troubleshooting.md) | errors you may see and what to do |
+| 13 | [API reference](13-api-reference.md) | every public function and its arguments |
 
 ## Conventions used throughout
 

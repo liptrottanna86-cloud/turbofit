@@ -1,4 +1,4 @@
-# 8. Line-by-line abundances
+# 10. Line-by-line abundances
 
 `linefit.py` measures abundances window by window for a star whose stellar parameters are already known, usually from FERRE. For each window it fits:
 
@@ -9,7 +9,7 @@
 
 Each abundance comes with a statistical error and a systematic error propagated from the stellar-parameter uncertainties.
 
-## 8.1 Setting up a `LineFitter`
+## 10.1 Setting up a `LineFitter`
 
 ```python
 import turbogrid, linefit, nlte
@@ -33,14 +33,14 @@ Node axes can be `(n, start, step)` triplets, as in turbogrid, or explicit array
 |---|---|---|
 | `offsets` | −0.6 … +0.6 in 0.2 dex steps | abundance ladder around the starting [X/M]; extended automatically if a fit reaches its end (`max_extend=2` times) |
 | `drv_max` | 5 km/s | bound on the per-line velocity offset |
-| `vmac`, `vsini` | 3.0, 0.0 km/s | starting / fixed stellar broadening (see 8.5) |
+| `vmac`, `vsini` | 3.0, 0.0 km/s | starting / fixed stellar broadening (see 10.5) |
 | `cont_deg` | 1 | continuum polynomial per window (0 = scale only, `None` = none) |
 | `dw` | 0.02 Å | synthesis step for the full-range runs in `automask` |
 | `workdir` | temporary | where the Turbospectrum runs happen |
 
 `lf.mode('Mg')` tells you which mode an element will use.
 
-## 8.2 The two modes
+## 10.2 The two modes
 
 **CNO-LTE** is used for every element not handled in NLTE.
 
@@ -58,7 +58,7 @@ Node axes can be `(n, start, step)` triplets, as in turbogrid, or explicit array
 
 In both modes only the line windows are synthesised (Turbospectrum segments). Every fit iteration afterwards is pure interpolation plus broadening, with no Turbospectrum calls.
 
-## 8.3 Line masks
+## 10.3 Line masks
 
 ### Your own
 
@@ -103,9 +103,9 @@ What it does:
 This works the same way for molecular features (C from CO/CN/CH, N from CN, O from OH) as for atomic lines.
 
 > [!TIP]
-> `min_response` is a flux change for +`dx` dex. A sensible value is a few times your noise per pixel, divided by √(pixels per line). Low-S/N spectra want a higher threshold. Lines that end up too weak are flagged `weak` anyway (8.9).
+> `min_response` is a flux change for +`dx` dex. A sensible value is a few times your noise per pixel, divided by √(pixels per line). Low-S/N spectra want a higher threshold. Lines that end up too weak are flagged `weak` anyway (10.9).
 
-## 8.4 Fitting
+## 10.4 Fitting
 
 ```python
 star = dict(teff=4520., logg=1.9, mh=-0.42, am=0.18, cm=-0.20, nm=0.30,
@@ -127,7 +127,7 @@ If `mask` is omitted, `elements=[...]` must be given and `automask` is run once.
 
 The fit uses `scipy.optimize.least_squares`, with [X/M] bounded by the ladder. When a fit reaches the ladder's end, the ladder is extended and the window refitted.
 
-**Measurement errors:** see 8.6 below.
+**Measurement errors:** see 10.6 below.
 
 ### Blends between fitted elements: `iterate`
 
@@ -139,17 +139,22 @@ Known abundances of other species can also be given directly:
 star['elems'] = [['Ce', 0.2], ['Nd', 0.3]]
 ```
 
-## 8.5 Macroturbulence: `vmac=`
+## 10.5 Broadening: `vmac=` and `broadening=`
 
-| value | behaviour |
+`LineFitter(broadening='vmac')` (default) or `broadening='vsini'` (rotating stars) chooses which broadening `fit(vmac=...)` controls. The other is held fixed at `star['vsini']` / `star['vmac']` if the star dictionary has it (e.g. from `starfit` or a grid with a broadening axis), and otherwise at the value given to `LineFitter`.
+
+In a test with an injected vsini of 12 km/s (R = 20 000, S/N 150), `broadening='vsini'` recovered 12.05 km/s.
+
+| value of `vmac=` | behaviour (for the broadening chosen above) |
 |---|---|
 | `'global'` (default) | a first pass fits vmac per line; it is then fixed to the median of the good lines, weighted by `snr_resp` |
 | `'line'` | free for every line (beware: degenerate with abundance for weak lines in narrow windows) |
+| `'star'` | fixed to `star['vmac']` (or `star['vsini']`), e.g. from the parameter stage |
 | a number | fixed |
 
-The value used is stored in `res.vmac`.
+The values used are stored in `res.vmac` and `res.vsini`.
 
-## 8.6 Measurement errors on the abundances
+## 10.6 Measurement errors on the abundances
 
 There are three per-line estimates of the measurement (noise) error on [X/M], and a combined error for each element.
 
@@ -170,7 +175,7 @@ These errors describe the noise in your spectrum, so they are only as good as yo
 | `err_mean` | error of the weighted mean from the per-line `err_stat` |
 | `std`, `err_scatter` | line-to-line standard deviation, and `std/√n` |
 | `err_meas` | measurement error of the mean: the larger of `err_mean` and `err_scatter` |
-| `err_sys` | stellar-parameter systematic (8.8), correlated between lines |
+| `err_sys` | stellar-parameter systematic (10.8), correlated between lines |
 | `err_total` | √(`err_meas`² + `err_sys`²) |
 
 Using the larger of the propagated error and the observed scatter means the quoted error of the mean also covers line-to-line problems the noise model does not know about (log gf errors, unmodelled blends, continuum placement).
@@ -188,7 +193,7 @@ Using the larger of the propagated error and the observed scatter means the quot
 
 With 12 realisations the "true scatter" is itself uncertain by about 20 %. The strong and moderate lines agree to within that. The two weakest lines (5414.03 and 5425.30, flagged `weak` at this S/N) differ by up to ~40 % in either direction, because their errors are large and the χ² surface is far from parabolic.
 
-## 8.7 The carbon isotope ratio ¹²C/¹³C
+## 10.7 The carbon isotope ratio ¹²C/¹³C
 
 ### Setting the ratio for a star
 
@@ -215,7 +220,7 @@ s['xm'], s['err_meas']                         # log10 ratio and its error
 How it works:
 
 * The ladder is in log₁₀(¹²C/¹³C), ±0.6 dex around the star's current ratio by default, and is extended automatically if a fit reaches its end.
-* It is synthesised at the same bracketing atmosphere nodes as the abundances (CNO-LTE mode; molecules are always LTE), so measurement errors (8.6) and parameter systematics (below) come out the same way.
+* It is synthesised at the same bracketing atmosphere nodes as the abundances (CNO-LTE mode; molecules are always LTE), so measurement errors (10.6) and parameter systematics (below) come out the same way.
 * The [M/H] systematic is not shifted by −1 for the ratio, because it is not an abundance relative to M.
 * **Fit C and N in the same call with `iterate=1`.** The ¹³C features are ¹³CN, ¹³CO and ¹³CH, so their strength depends on C (and N). The second pass then fits the ratio with the C and N just measured, and the abundances with the ratio just measured.
 * In the results table, rows for `C12C13` have `xm` = log₁₀ ratio, a `c12c13` column with the ratio itself, and `xh` = NaN.
@@ -246,13 +251,13 @@ When the ratio is high, χ² often does not rise by 1 on the high side within th
 
 | injected ¹²C/¹³C | noise | windows (automatic / good) | recovered |
 |---|---|---|---|
-| 8 | none | 8 / 3 | 8.03 |
-| 8 | S/N = 100 | 8 / 4 | 7.1 (6.2–8.2) |
+| 8 | none | 8 / 3 | 10.03 |
+| 8 | S/N = 100 | 8 / 4 | 9.1 (6.2–10.2) |
 | 25 | S/N = 100 | 8 / 1 | 15.8 (12.0–20.8) |
 
 At a ratio of 25 only one window remained usable and the result is about 2σ low. With so few weak lines, high ratios are poorly constrained, which is the regime described above. Real performance should be checked with your molecular line lists and data.
 
-## 8.8 Systematic errors from the stellar parameters
+## 10.8 Systematic errors from the stellar parameters
 
 In **CNO-LTE** mode these cost no extra synthesis. The node spectra are already computed, so for each parameter p in `star_err`:
 
@@ -269,7 +274,7 @@ Optional extras, which need extra syntheses:
 * `sys_vmicro=True`: adds vmicro, from ladders at vmicro ± σ for the dominant node only (two extra ladders per element).
 * `sys_nlte=True`: in NLTE mode, ladders at Teff, log g and [M/H] ± σ (and vmicro). That is six to eight extra ladders per element.
 
-## 8.9 Results
+## 10.9 Results
 
 ```python
 res.summary['Fe']
@@ -285,8 +290,8 @@ res.write('star1_lines.csv')
 | `element, center, wmin, wmax` | the window (rest frame) |
 | `mode` | `CNO-LTE` or `NLTE` |
 | `xm`, `xh` | [X/M] and [X/H] (= [X/M] + the star's [M/H]); see below for [X/Fe] |
-| `err_stat`, `err_lo`, `err_hi`, `err_mc` | measurement errors on [X/M] (8.6) |
-| `err_sys` | parameter-propagated systematic error on [X/M] (8.8) |
+| `err_stat`, `err_lo`, `err_hi`, `err_mc` | measurement errors on [X/M] (10.6) |
+| `err_sys` | parameter-propagated systematic error on [X/M] (10.8) |
 | `dxh_d<p>` | d[X/H]/dp for each parameter in `star_err` |
 | `drv`, `vmac` | per-line velocity offset and the vmac used |
 | `chi2r`, `npix` | reduced χ² and number of pixels |
@@ -305,7 +310,7 @@ x_fe = res.summary['Mg']['xh'] - res.summary['Fe']['xh']      # [Mg/Fe]
 
 For its error, combine the two statistical errors in quadrature (`err_mean`, or `std`/√n). The [M/H] part of the systematic error largely cancels in the difference, because both elements respond to [M/H] in the same way. The derivatives in `dxh_dmh` show by how much.
 
-## 8.10 Plots
+## 10.10 Plots
 
 ```python
 linefit.plot_lines(res, 'star1_lines.pdf', ncols=4, element='Fe',
@@ -316,7 +321,7 @@ linefit.plot_lines(res, 'star1_lines.pdf', ncols=4, element='Fe',
 
 *Fits to four automatically selected Fe windows (simulated R = 20 000, S/N = 150 spectrum with [Fe/M] = +0.15).*
 
-## 8.11 How well does it work?
+## 10.11 How well does it work?
 
 Tests on simulated spectra (4500 K giant, R = 20 000, VALD atomic lines, 5400–5500 Å):
 

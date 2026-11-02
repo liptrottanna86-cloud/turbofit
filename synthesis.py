@@ -7,6 +7,23 @@ import time
 import utils, atomic, atmos
 
 
+def isotope_block(solarisotopes=False, c12c13=None):
+    """Turbospectrum ISOTOPES lines for carbon.
+    c12c13 given: that 12C/13C number ratio. Otherwise solarisotopes=True keeps
+    Turbospectrum's default (solar, 12C/13C ~ 89) and False uses the 'giant'
+    ratio 12C/13C = 15."""
+    if c12c13 is None:
+        if solarisotopes:
+            return ''
+        c12c13 = 15.0
+    r = float(c12c13)
+    if r <= 0:
+        raise ValueError('c12c13 must be > 0')
+    return ("'ISOTOPES:'  '2'\n"
+            "   6.012 {:.6f}\n"
+            "   6.013 {:.6f}\n").format(r / (1.0 + r), 1.0 / (1.0 + r))
+
+
 def make_abundances(mh=0.0, am=0.0, cm=0.0, nm=0.0, elems=None):
     """Absolute abundances A(X) (H=12) for Z=1..99, as used by synthesize().
     [alpha/M] applies to O,Ne,Mg,Si,S,Ar,Ca,Ti; elems=[[name,[X/M]],...] override."""
@@ -27,7 +44,8 @@ def make_abundances(mh=0.0, am=0.0, cm=0.0, nm=0.0, elems=None):
 def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
                wrange=[15000.0,17000.0],dw=0.1,atmod=None,atmos_type=None,
                dospherical=True,linelists=None,solarisotopes=None,workdir=None,
-               save=False,verbose=False,nlte=None,nlte_elems=None,segments=None):
+               save=False,verbose=False,nlte=None,nlte_elems=None,segments=None,
+               c12c13=None):
     """
     Code to synthesize a spectrum with Turbospectrum.
     
@@ -85,6 +103,9 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
     segments : list of (wmin, wmax), optional
        Compute only these non-overlapping windows (Turbospectrum SEGMENTSFILE),
        with step ~dw. Much faster than the full wrange for line fitting.
+    c12c13 : float, optional
+       Carbon isotope ratio 12C/13C (number ratio), e.g. 8. Overrides
+       solarisotopes for carbon.
 
     Returns
     -------
@@ -164,7 +185,8 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
                                       save=save,solarisotopes=solarisotopes,
                                       babsma=None,atmos_type=atmos_type,
                                       spherical=spherical,vmicro=vmicro,tfactor=1.0,
-                                      nlte_info=nlte_info,segments=segments)
+                                      nlte_info=nlte_info,segments=segments,
+                                      c12c13=c12c13)
     finally:
         # always return to the caller's directory, even if Turbospectrum failed
         os.chdir(cwd)
@@ -180,7 +202,7 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
 def do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,save=False,
                solarisotopes=False,babsma=None,atmos_type='marcs',
                spherical=True,vmicro=2.0,tfactor=1.0,verbose=False,
-               nlte_info=None,segments=None):
+               nlte_info=None,segments=None,c12c13=None):
     """
     Runs Turbospectrum for specified input parameters.
 
@@ -218,6 +240,8 @@ def do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,save=False,
        Verbose output to the screen.
     nlte_info : str, optional
        Turbospectrum NLTE info file (from nlte.prepare()); switches bsyn to NLTE.
+    c12c13 : float, optional
+       12C/13C number ratio (overrides solarisotopes for carbon).
     segments : list of (wmin, wmax), optional
        Non-overlapping windows to compute instead of the full wrange.
 
@@ -273,12 +297,8 @@ def do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,save=False,
         fout.write("'INDIVIDUAL ABUNDANCES:'  '{:2d}'\n".format(nels))
         for iel,abun in enumerate(abundances):
             fout.write("{:5d}  {:8.3f}\n".format(iel+1,abun))
-        if not solarisotopes:
-            fout.write("'ISOTOPES:'  '2'\n")
-            # Adopt ratio of 12C/13C=15
-      # giant 12C/13C = 15, same as babsma
-            fout.write("   6.012 0.9375\n")
-            fout.write("   6.013 0.0625\n")
+        # carbon isotopes: c12c13 if given, else giant 12C/13C=15 unless solar
+        fout.write(isotope_block(solarisotopes, c12c13))
         fout.write("'XIFIX:'  'T'\n")
         fout.write("{:8.3f}\n".format(vmicro))
         fout.write("EOF\n")
@@ -336,12 +356,7 @@ def do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,save=False,
     fout.write("'INDIVIDUAL ABUNDANCES:'  '{:2d}'\n".format(len(abundances)))
     for iel,abun in enumerate(abundances):
         fout.write("{:5d}  {:8.3f}\n".format(iel+1,abun))
-    if not solarisotopes:
-      fout.write("'ISOTOPES:'  '2'\n")
-      # adopt solar 12C/13C = 89
-      # giant 12C/13C = 15, same as babsma
-      fout.write("   6.012 0.9375\n")
-      fout.write("   6.013 0.0625\n")
+    fout.write(isotope_block(solarisotopes, c12c13))
     fout.write("'NFILES:'  '{:4d}'\n".format(len(linelists)))
     for linelist in linelists: 
         fout.write(linelist+"\n")

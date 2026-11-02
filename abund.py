@@ -57,10 +57,14 @@ def synthesize_sets(teff, logg, mh=0.0, am=0.0, cm=0.0, nm=0.0, vmicro=2.0,
                     abund_sets=([],), elems=None, wrange=(15000.0, 17000.0), dw=0.1,
                     atmod=None, atmos_type=None, dospherical=True, linelists=None,
                     solarisotopes=None, segments=None, nlte=None, nlte_elems=None,
-                    rerun_babsma=True, workdir=None, save=False):
+                    rerun_babsma=True, workdir=None, save=False, c12c13=None):
     """
     Synthesize one spectrum per entry of abund_sets (each a list of
     [element, [X/M]] overrides applied on top of `elems`).
+
+    c12c13 : None, a number (same 12C/13C for every set), or a list with one
+        ratio per set (e.g. to vary only the isotope ratio, use
+        abund_sets=[[]]*n with c12c13=[...]; see isotope_ladder()).
 
     Returns
     -------
@@ -78,6 +82,12 @@ def synthesize_sets(teff, logg, mh=0.0, am=0.0, cm=0.0, nm=0.0, vmicro=2.0,
             if not os.path.exists(l):
                 raise FileNotFoundError(l)
 
+        if c12c13 is None or np.ndim(c12c13) == 0:
+            ratios = [c12c13] * len(abund_sets)
+        else:
+            ratios = list(c12c13)
+            if len(ratios) != len(abund_sets):
+                raise ValueError('c12c13 list must have one entry per abundance set')
         sets_abund = []
         for s in abund_sets:
             el = list(elems or [])
@@ -120,7 +130,7 @@ def synthesize_sets(teff, logg, mh=0.0, am=0.0, cm=0.0, nm=0.0, vmicro=2.0,
                 solarisotopes=solarisotopes,
                 babsma=None if (opac is None or rerun_babsma) else opac,
                 atmos_type=atmos_type, spherical=spherical, vmicro=vmicro,
-                nlte_info=nlte_info, segments=segments)
+                nlte_info=nlte_info, segments=segments, c12c13=ratios[i])
             if np.isscalar(f):
                 raise RuntimeError(f'Turbospectrum failed for abundance set {i}: {abund_sets[i]}')
             if opac is None:
@@ -152,3 +162,17 @@ def ladder(teff, logg, elem, offsets=(-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6),
     wave, flux, cont = synthesize_sets(teff, logg, mh=mh, am=am, cm=cm, nm=nm,
                                        elems=elems, abund_sets=sets, **kw)
     return xm, wave, flux, cont
+
+
+def isotope_ladder(teff, logg, ratios=(4, 6, 8, 10, 15, 20, 30, 50, 90), **kw):
+    """
+    Spectra of one star with different 12C/13C ratios (everything else
+    fixed). Extra keywords go to synthesize_sets() (mh, am, cm, nm, vmicro,
+    elems, wrange, dw, atmod, linelists, segments, ...).
+
+    Returns ratios, wave, flux (nratio, npix), cont.
+    """
+    ratios = np.asarray(ratios, float)
+    wave, flux, cont = synthesize_sets(teff, logg, abund_sets=[[] for _ in ratios],
+                                       c12c13=list(ratios), **kw)
+    return ratios, wave, flux, cont

@@ -77,6 +77,27 @@ import broaden
 C_KMS = 299792.458
 ATM_AXES = ('teff', 'logg', 'mh', 'am', 'cm')
 
+# pseudo-element for the carbon isotope ratio: fitted quantity is log10(12C/13C)
+ISO = 'C12C13'
+SOLAR_C12C13 = 0.989 / 0.011     # Turbospectrum's default (solar) mix
+
+
+def default_c12c13(star):
+    """12C/13C used for `star` when star['c12c13'] is not given: solar for
+    logg > 3, 15 ('giant') otherwise -- the synthesize() default."""
+    r = star.get('c12c13')
+    if r is not None:
+        return float(r)
+    return SOLAR_C12C13 if star.get('logg', 3.0) > 3.001 else 15.0
+
+
+def base_value(el, star):
+    """Starting value of the fitted quantity: [X/M], or log10(12C/13C)."""
+    if el == ISO:
+        return float(np.log10(default_c12c13(star)))
+    return abund.base_xm(el, star.get('am', 0.0), star.get('cm', 0.0), star.get('nm', 0.0),
+                         star.get('elems'))
+
 
 # =====================================================================
 # line masks
@@ -177,14 +198,19 @@ def corner_weights(br, point):
 
 def _ladder_worker(a):
     """a: dict with everything abund.synthesize_sets needs. Returns (wave, normflux)."""
-    sets = [[[a['elem'], float(x)]] for x in a['xm']]
+    if a['elem'] == ISO:
+        sets = [[] for _ in a['xm']]
+        ratios = [10 ** float(x) for x in a['xm']]
+    else:
+        sets = [[[a['elem'], float(x)]] for x in a['xm']]
+        ratios = a.get('c12c13')
     w, f, c = abund.synthesize_sets(
         a['teff'], a['logg'], mh=a['mh'], am=a['am'], cm=a['cm'], nm=a['nm'],
         vmicro=a['vmicro'], abund_sets=sets, elems=a.get('elems'),
         wrange=a['wrange'], dw=a['dw'], atmod=a['atmod'], atmos_type=a['atmos_type'],
         linelists=a['linelists'], solarisotopes=a['solarisotopes'],
         segments=a['segments'], nlte=a['nlte'], nlte_elems=a['nlte_elems'],
-        workdir=tempfile.mkdtemp(prefix='tfl', dir=a['tmpdir']))
+        c12c13=ratios, workdir=tempfile.mkdtemp(prefix='tfl', dir=a['tmpdir']))
     return w, f / c
 
 
@@ -194,7 +220,7 @@ def _sets_worker(a):
         vmicro=a['vmicro'], abund_sets=a['sets'], elems=a.get('elems'),
         wrange=a['wrange'], dw=a['dw'], atmod=a['atmod'], atmos_type=a['atmos_type'],
         linelists=a['linelists'], solarisotopes=a['solarisotopes'], segments=None,
-        nlte=a['nlte'], nlte_elems=a['nlte_elems'],
+        nlte=a['nlte'], nlte_elems=a['nlte_elems'], c12c13=a.get('c12c13'),
         workdir=tempfile.mkdtemp(prefix='tfm', dir=a['tmpdir']))
     return w, f / c
 
@@ -240,7 +266,7 @@ class LineFitResult:
                 d = [l['dxh_dp'].get(p, np.nan) for l in L]
                 if np.all(np.isfinite(d)):
                     dm = np.sum(w * np.array(d)) / np.sum(w)
-                    if p == 'mh':
+                    if p == 'mh' and el != ISO:
                         dm -= 1.0          # [X/M] = [X/H] - [M/H]
                     sys2 += (dm * sig) ** 2
             err_mean = np.sqrt(1 / np.sum(w))
@@ -250,7 +276,14 @@ class LineFitResult:
             # per-line errors and the observed line-to-line scatter
             err_meas = np.nanmax([err_mean, err_scatter])
             err_sys = np.sqrt(sys2) if self.star_err else np.nan
-            out[el] = dict(n=len(L), xm=mean, xh=mean + self.star.get('mh', 0.0),
+            if el == ISO:
+                # fitted quantity is log10(12C/13C); also give the ratio itself
+                extra = dict(c12c13=10 ** mean, c12c13_lo=10 ** (mean - err_meas),
+                             c12c13_hi=10 ** (mean + err_meas))
+            else:
+                extra = {}
+            out[el] = dict(extra, n=len(L), xm=mean,
+                           xh=np.nan if el == ISO else mean + self.star.get('mh', 0.0),
                            err_mean=err_mean, std=std, err_scatter=err_scatter,
                            err_meas=err_meas, err_sys=err_sys,
                            err_total=np.sqrt(err_meas ** 2 + (err_sys if np.isfinite(err_sys) else 0.0) ** 2),
@@ -263,6 +296,8 @@ class LineFitResult:
                 'err_lo', 'err_hi', 'err_mc', 'err_sys', 'drv', 'vmac', 'chi2r', 'npix', 'snr_resp', 'response',
                 'blend', 'flags', 'ok']
         t = Table({c: [l[c] for l in self.lines] for c in cols})
+        if any(l['element'] == ISO for l in self.lines):
+            t['c12c13'] = [10 ** l['xm'] if l['element'] == ISO else np.nan for l in self.lines]
         for p in self.star_err:
             t['dxh_d' + p] = [l['dxh_dp'].get(p, np.nan) for l in self.lines]
         return t
@@ -335,6 +370,11 @@ class LineFitter:
 
     # ------------------------------------------------------------------
     def mode(self, elem):
+        if elem == ISO:
+            # molecular features: always LTE on the CNO atmospheres
+            if self.nodes is not None and self.lookup is not None:
+                return 'CNO-LTE'
+            raise ValueError('fitting 12C/13C needs atmosphere nodes and atmod_lookup')
         if elem in self.nlte_elems and elem in self._nlte_ok:
             return 'NLTE'
         if self.nodes is not None and self.lookup is not None:
@@ -358,7 +398,7 @@ class LineFitter:
                     nm=star.get('nm', 0.0), vmicro=star.get('vmicro', 1.5),
                     elems=star.get('elems'), linelists=self.linelists,
                     solarisotopes=star.get('logg', 3.0) > 3.001,
-                    nlte=self.nlte, tmpdir=self.tmpdir)
+                    c12c13=star.get('c12c13'), nlte=self.nlte, tmpdir=self.tmpdir)
 
     def _atmospheres(self, star, elem):
         """[(key, atmod, atmos_type, teff_for_geometry, logg_for_geometry)], bracket."""
@@ -385,7 +425,7 @@ class LineFitter:
         ab = tuple(round(float(star.get(k, 0.0)), 4) for k in ('mh', 'am', 'cm', 'nm'))
         extra = (round(star['teff'], 2), round(star['logg'], 4)) if key == 'nlte' else ()
         return (elem, key, tuple(segs), round(vmicro, 4), ab, repr(star.get('elems')),
-                star.get('logg', 3.0) > 3.001) + extra
+                star.get('logg', 3.0) > 3.001, star.get('c12c13')) + extra
 
     def _ladders(self, star, elem, segs, xm, atms, vmicro=None):
         """Synthesise (cached) the ladder `xm` for every atmosphere; returns
@@ -474,10 +514,18 @@ class LineFitter:
         # 'X removed': -9 dex in LTE; in NLTE stay inside the departure grids
         # (which span about -2..+1 dex), so use -1.9 (lines ~80x weaker)
         xoff = -9.0 if nl is None else -1.9
-        sets = [[]]
+        r0 = default_c12c13(star)
+        sets, ratios = [[]], [r0]
         for el in elements:
+            if el == ISO:
+                # more 13C (ratio lower by dx dex) and essentially no 13C
+                sets += [[], []]
+                ratios += [r0 / 10 ** dx, 1e6]
+                continue
             b = abund.base_xm(el, kw['am'], kw['cm'], kw['nm'], kw['elems'])
             sets += [[[el, b + dx]], [[el, xoff if (nl is None or el not in nl) else b - 1.9]]]
+            ratios += [r0, r0]
+        kw['c12c13'] = ratios
         # split the range over n_jobs processes
         n = max(1, self.n_jobs)
         edges = np.linspace(wrange[0], wrange[1], n + 1)
@@ -729,6 +777,8 @@ class LineFitter:
                 break
             # feed the measured abundances back in for the next pass
             done = {el: v['xm'] for el, v in res.summary.items() if v.get('n', 0) > 0}
+            if ISO in done:
+                star['c12c13'] = float(10 ** done.pop(ISO))
             elems = [e for e in elems if e[0] not in done] + [[k, float(v)] for k, v in done.items()]
             star['elems'] = elems
             if self.verbose:
@@ -759,8 +809,7 @@ class LineFitter:
             lam = np.median([w['center'] for w in wins])
             segs = _merge_segments([(w['wmin'], w['wmax']) for w in wins], self._pad(lam) + 0.5)
             atms, br = self._atmospheres(star, el)
-            b0 = abund.base_xm(el, star.get('am', 0.0), star.get('cm', 0.0), star.get('nm', 0.0),
-                               star.get('elems'))
+            b0 = base_value(el, star)
             xm = np.round(b0 + self.offsets, 4)
             step = np.median(np.diff(self.offsets))
 
@@ -853,7 +902,10 @@ class LineFitter:
                 flags = []
                 if r['xm'] <= xm[0] + 0.02 or r['xm'] >= xm[-1] - 0.02:
                     flags.append('edge')
-                if r['snr_resp'] < 3:
+                # 'weak': 0.1 dex in [X/M] moves the window by < 3 sigma. For
+                # log(12C/13C) the natural step is 0.3 dex (a factor 2 in the
+                # ratio), i.e. the same test at 1 sigma per 0.1 dex
+                if r['snr_resp'] < (1.0 if el == ISO else 3.0):
                     flags.append('weak')
                 if r['chi2r'] > 5:
                     flags.append('poorfit')
@@ -865,9 +917,10 @@ class LineFitter:
                                        r['xm'], vmac0, fit_vmac, fixed=list(r['x']))
                     d = (xp - xn) / (hp + hm)          # d[X/M]/dp at fixed [M/H] synthesis
                     row['dxh_dp'][p] = d
-                    dd = d - 1.0 if p == 'mh' else d    # error on [X/M]
+                    dd = d - 1.0 if (p == 'mh' and el != ISO) else d    # error on [X/M]
                     sys2 += (dd * star_err[p]) ** 2
-                row.update(xm=r['xm'], xh=r['xm'] + star.get('mh', 0.0), err_stat=r['err'],
+                row.update(xm=r['xm'], xh=(np.nan if el == ISO else r['xm'] + star.get('mh', 0.0)),
+                           err_stat=r['err'],
                            err_lo=r['err_lo'], err_hi=r['err_hi'], err_mc=r['err_mc'],
                            err_sys=np.sqrt(sys2) if sys_cubes else np.nan,
                            drv=float(r['x'][1]), vmac=float(r['x'][2]) if fit_vmac else vmac0,
@@ -906,8 +959,11 @@ def plot_lines(res, outfile=None, ncols=4, element=None, colors=('k', 'r')):
             ax.plot(l['wave'], l['model'], '-', color=colors[1], lw=1.5, label='fit')
             ax.xaxis.set_major_locator(MaxNLocator(4))
             ax.set_title('{} {:.2f}'.format(l['element'], l['center']))
-            ax.text(0.03, 0.06, '[{}/M]={:+.2f}$\\pm${:.2f}{}'.format(
-                l['element'], l['xm'], l['err_stat'], ' ' + l['flags'] if l['flags'] else ''),
+            if l['element'] == ISO:
+                lab = '$^{{12}}$C/$^{{13}}$C={:.1f}'.format(10 ** l['xm'])
+            else:
+                lab = '[{}/M]={:+.2f}$\\pm${:.2f}'.format(l['element'], l['xm'], l['err_stat'])
+            ax.text(0.03, 0.06, lab + (' ' + l['flags'] if l['flags'] else ''),
                 transform=ax.transAxes, fontsize=10)
         for ax in list(axes.flat)[len(L):]:
             ax.set_visible(False)

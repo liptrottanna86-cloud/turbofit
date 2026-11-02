@@ -256,7 +256,7 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
                       linelists=None, solarisotopes=False, dospherical=True,
                       atmos_type=None, outputs_dir=None, shard_size=1000,
                       R_out=None, dw_out=None, wout=None, elems=None,
-                      nlte=None, nlte_elems=None, broaden_kw=None):
+                      nlte=None, nlte_elems=None, broaden_kw=None, c12c13=None):
     """
     Write the grid-point table and shared settings to disk so that
     `run_one()` can be called standalone (from a job script / array
@@ -286,6 +286,9 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
     nlte, nlte_elems : nlte.NLTEConfig and list of elements, optional
         Build an NLTE grid (standard MARCS atmospheres; use
         atmod_lookup=nlte_atmod_lookup in make_grid_params()).
+    c12c13 : float, optional
+        12C/13C number ratio used for every spectrum of the grid (default:
+        the solarisotopes behaviour of synthesize()).
     broaden_kw : dict, optional
         Post-synthesis broadening/resampling with broaden.convolve(), e.g.
         dict(R=22500, dlogw_out=6e-6, wave_out=None) or an LSF:
@@ -329,7 +332,7 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
                 # reset Ne..Ti to 0 so the 'am' axis changes only O
                 elems=elems,
                 nlte=nlte, nlte_elems=list(nlte_elems) if nlte_elems else None,
-                broaden_kw=broaden_kw)
+                broaden_kw=broaden_kw, c12c13=c12c13)
     with open(os.path.join(outdir, 'grid_meta.pkl'), 'wb') as f:
         pickle.dump(meta, f)
 
@@ -469,6 +472,7 @@ def run_one(outdir, idx, overwrite=False, verbose=True):
             linelists=meta['linelists'], solarisotopes=meta['solarisotopes'],
             dospherical=meta['dospherical'], elems=meta.get('elems'),
             nlte=meta.get('nlte'), nlte_elems=meta.get('nlte_elems'),
+            c12c13=meta.get('c12c13'),
         )
         if np.isscalar(flux) and flux == 0.:
             raise RuntimeError('synthesize() returned a failure sentinel (0.,0.,0.)')

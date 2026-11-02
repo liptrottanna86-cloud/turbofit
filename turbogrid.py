@@ -55,6 +55,7 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import synthesis  # <-- rename to match your module (the one with synthesize())
+import broaden
 import atmos       # Holtzman's atmos.py -- filename()/kurucz2turbo()/marcs2turbo()
 import utils
 
@@ -167,6 +168,11 @@ def _holtzman_vmicro(logg):
     return 2.478 - 0.325 * logg
 
 
+def nlte_atmod_lookup(teff, logg, mh, am=0.0, cm=0.0):
+    """atmod_lookup for NLTE grids: no file, see make_grid_params()."""
+    return 'nlte'
+
+
 def make_grid_params(teff_grid, logg_grid, mh_grid, am=0.0, cm=0.0, nm=0.0,
                       vmicro=2.0, atmod_lookup=None):
     """
@@ -193,6 +199,9 @@ def make_grid_params(teff_grid, logg_grid, mh_grid, am=0.0, cm=0.0, nm=0.0,
         atmosphere-model file, or None if there isn't one -- see
         make_atmod_lookup() for a ready-made implementation built on
         atmos.py. Points with no match are dropped with a warning.
+        For an NLTE grid (write_grid_table(nlte=..., nlte_elems=...)) use
+        nlte_atmod_lookup: the atmosphere is then interpolated from the
+        standard MARCS grid at run time, so am/cm do not change it.
 
     Returns
     -------
@@ -227,7 +236,8 @@ def make_grid_params(teff_grid, logg_grid, mh_grid, am=0.0, cm=0.0, nm=0.0,
                 for a in ams:
                     for c in cms:
                         atmod = atmod_lookup(float(teff), float(logg), float(mh), float(a), float(c))
-                        if not atmod or not os.path.exists(atmod):
+                        # 'nlte': atmosphere comes from the NLTE interpolator at run time
+                        if not atmod or (atmod != 'nlte' and not os.path.exists(atmod)):
                             skipped += 1
                             continue
                         for n in nms:
@@ -245,7 +255,8 @@ def make_grid_params(teff_grid, logg_grid, mh_grid, am=0.0, cm=0.0, nm=0.0,
 def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
                       linelists=None, solarisotopes=False, dospherical=True,
                       atmos_type=None, outputs_dir=None, shard_size=1000,
-                      R_out=None, dw_out=None, wout=None, elems=None):
+                      R_out=None, dw_out=None, wout=None, elems=None,
+                      nlte=None, nlte_elems=None, broaden_kw=None):
     """
     Write the grid-point table and shared settings to disk so that
     `run_one()` can be called standalone (from a job script / array
@@ -272,6 +283,14 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
         path in grid_meta.pkl, so run_one() (invoked standalone by job
         scripts, from whatever directory Slurm/GNU parallel happens to
         start in) always writes to the right place.
+    nlte, nlte_elems : nlte.NLTEConfig and list of elements, optional
+        Build an NLTE grid (standard MARCS atmospheres; use
+        atmod_lookup=nlte_atmod_lookup in make_grid_params()).
+    broaden_kw : dict, optional
+        Post-synthesis broadening/resampling with broaden.convolve(), e.g.
+        dict(R=22500, dlogw_out=6e-6, wave_out=None) or an LSF:
+        dict(lsf=lsf_array, lsf_offsets=np.arange(-7, 8), wave_out=apogee_wave).
+        Replaces R_out/dw_out/wout (which still work as before).
     shard_size : int
         Output files are split into subdirectories of at most this many
         points each: outputs_dir/00000/spec_000000.npz,
@@ -308,7 +327,9 @@ def write_grid_table(params, outdir, wrange=(15000.0, 17000.0), dw=0.1,
                 R_out=R_out, dw_out=dw_out, wout=list(wout) if wout else None,
                 # optional [X/M] overrides passed to synthesize(elems=...), e.g.
                 # reset Ne..Ti to 0 so the 'am' axis changes only O
-                elems=elems)
+                elems=elems,
+                nlte=nlte, nlte_elems=list(nlte_elems) if nlte_elems else None,
+                broaden_kw=broaden_kw)
     with open(os.path.join(outdir, 'grid_meta.pkl'), 'wb') as f:
         pickle.dump(meta, f)
 
@@ -447,10 +468,14 @@ def run_one(outdir, idx, overwrite=False, verbose=True):
             atmos_type=meta['atmos_type'], wrange=meta['wrange'], dw=meta['dw'],
             linelists=meta['linelists'], solarisotopes=meta['solarisotopes'],
             dospherical=meta['dospherical'], elems=meta.get('elems'),
+            nlte=meta.get('nlte'), nlte_elems=meta.get('nlte_elems'),
         )
         if np.isscalar(flux) and flux == 0.:
             raise RuntimeError('synthesize() returned a failure sentinel (0.,0.,0.)')
-        if meta.get('R_out'):
+        if meta.get('broaden_kw'):
+            wave, fc = broaden.convolve(wave, np.vstack([flux, cont]), **meta['broaden_kw'])
+            flux, cont = fc[0], fc[1]
+        elif meta.get('R_out'):
             # convolve on the fine grid, then trim/resample to the output grid
             # (padding in wrange beyond wout absorbs the convolution edges)
             w_out = np.arange(meta['wout'][0], meta['wout'][1] + 0.5 * meta['dw_out'],
@@ -848,10 +873,10 @@ def write_ferre_grid(gridfile, ferre_root,
         (header followed by the flux data), so this is written as one
         plain-text file at exactly this path.
     labels : tuple of str
-        Which grid axes to expose to FERRE and in what order, FASTEST
-        varying first -- this becomes LABEL(1), LABEL(2), ... in the
-        header. Default matches the usual APOGEE/ASPCAP convention
-        (vmicro fastest, Teff slowest). Any axis here that doesn't
+        Which grid axes to expose to FERRE and in what order -- this
+        becomes LABEL(1), LABEL(2), ... in the header. The LAST label varies
+        fastest in the flux block -- verified with FERRE itself (pure
+        interpolation at every node of a test grid returns that node). Any axis here that doesn't
         actually vary in the collected grid is dropped automatically
         (e.g. if you only ever used one vmicro).
     normalize : bool
@@ -878,10 +903,15 @@ def write_ferre_grid(gridfile, ferre_root,
     npix = len(wave)
 
     dwave = np.diff(wave)
-    if not np.allclose(dwave, dwave[0], rtol=rtol):
-        raise ValueError('wavelength grid is not evenly spaced in wavelength -- '
-                          'FERRE synth files (LOGW=0) need a linear grid')
-    wave0, dw = float(wave[0]), float(dwave[0])
+    dlog = np.diff(np.log10(wave))
+    if np.allclose(dwave, dwave[0], rtol=rtol):
+        logw, wave0, dw = 0, float(wave[0]), float(dwave[0])
+    elif np.allclose(dlog, dlog[0], rtol=rtol):
+        # log10-uniform (e.g. broaden_kw dlogw_out / APOGEE-style pixels)
+        logw, wave0, dw = 1, float(np.log10(wave[0])), float(dlog[0])
+    else:
+        raise ValueError('wavelength grid is neither linear nor log10-linear -- '
+                          'FERRE synth files need one of the two')
 
     # drop any requested axis that doesn't actually vary in this grid
     axes = []
@@ -945,8 +975,11 @@ def write_ferre_grid(gridfile, ferre_root,
     for i, name in enumerate(label_names):
         lines.append(f" LABEL({i + 1}) = '{name}'")
     lines.append(f' NPIX = {npix}')
-    lines.append(f' WAVE = {wave0:.6f} {dw:.6f}')
-    lines.append(' LOGW = 0')
+    if logw:
+        lines.append(f' WAVE = {wave0:.10f} {dw:.10e}')
+    else:
+        lines.append(f' WAVE = {wave0:.6f} {dw:.6f}')
+    lines.append(f' LOGW = {logw}')
     lines.append(f' VACUUM = {vacuum}')
     if resolution is not None:
         lines.append(f' RESOLUTION = {resolution}')

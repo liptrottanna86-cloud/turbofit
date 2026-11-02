@@ -155,13 +155,15 @@ def synthesize(teff,logg,mh=0.0,am=0.0,cm=0.0,nm=0.0,vmicro=2.0,elems=None,
         spherical= True
     else:
         spherical = False
-    flux,cont,wave = do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,
-                                  save=save,solarisotopes=solarisotopes,
-                                  babsma=None,atmos_type=atmos_type,
-                                  spherical=spherical,vmicro=vmicro,tfactor=1.0,
-                                  nlte_info=nlte_info,segments=segments)
-
-    os.chdir(cwd)
+    try:
+        flux,cont,wave = do_turbospec(root,atmod,linelists,mh,am,abundances,wrange,dw,
+                                      save=save,solarisotopes=solarisotopes,
+                                      babsma=None,atmos_type=atmos_type,
+                                      spherical=spherical,vmicro=vmicro,tfactor=1.0,
+                                      nlte_info=nlte_info,segments=segments)
+    finally:
+        # always return to the caller's directory, even if Turbospectrum failed
+        os.chdir(cwd)
     if not save:
         shutil.rmtree(workdir)
 

@@ -818,10 +818,12 @@ class LineFitter:
 # plotting
 # =====================================================================
 
-def plot_lines(res, outfile=None, ncols=4, element=None):
-    """Observed (black) vs best-fit model (red) for every fitted window."""
+def plot_lines(res, outfile=None, ncols=4, element=None, colors=('k', 'r')):
+    """Observed (colors[0], default black) vs best-fit model (colors[1],
+    default red) for every fitted window, in the observed frame."""
     import matplotlib
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
     rc = {'font.family': 'serif', 'font.size': 14, 'axes.labelsize': 14,
           'axes.titlesize': 14, 'legend.fontsize': 10,
           'xtick.direction': 'in', 'ytick.direction': 'in',
@@ -834,8 +836,9 @@ def plot_lines(res, outfile=None, ncols=4, element=None):
     with matplotlib.rc_context(rc):
         fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows), squeeze=False)
         for ax, l in zip(axes.flat, L):
-            ax.plot(l['wave'], l['flux'], 'k.', ms=4, label='data')
-            ax.plot(l['wave'], l['model'], 'r-', lw=1.5, label='fit')
+            ax.plot(l['wave'], l['flux'], '.', color=colors[0], ms=4, label='data')
+            ax.plot(l['wave'], l['model'], '-', color=colors[1], lw=1.5, label='fit')
+            ax.xaxis.set_major_locator(MaxNLocator(4))
             ax.set_title('{} {:.2f}'.format(l['element'], l['center']))
             ax.text(0.03, 0.06, '[{}/M]={:+.2f}$\\pm${:.2f}{}'.format(
                 l['element'], l['xm'], l['err_stat'], ' ' + l['flags'] if l['flags'] else ''),
@@ -844,7 +847,7 @@ def plot_lines(res, outfile=None, ncols=4, element=None):
             ax.set_visible(False)
         axes[0, 0].legend(loc='lower right')
         for ax in axes[-1]:
-            ax.set_xlabel(r'Wavelength ($\AA$)')
+            ax.set_xlabel(r'Observed wavelength ($\AA$)')
         for ax in axes[:, 0]:
             ax.set_ylabel('Normalised flux')
         fig.tight_layout()

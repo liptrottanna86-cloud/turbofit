@@ -19,6 +19,7 @@ Steps
 Usage
 -----
     python apogee_gc_test.py list                      # members per cluster
+    python apogee_gc_test.py download                  # their apStar files (login node)
     python apogee_gc_test.py run M13                   # all selected M13 stars
     python apogee_gc_test.py run M13 --index 4         # one star (job arrays)
     python apogee_gc_test.py collect                   # table + plots
@@ -43,16 +44,19 @@ import apogee_lsf
 # CONFIG
 # =====================================================================
 
-SAS = '/data/sdss/dr17'                       # local copy of the SAS tree
-GC_VAC = SAS + '/apogee/vac/apogee-globular-clusters/VAC_GC_DR17_synspec_rev1-v1_1.fits'
-ALLSTAR = SAS + '/apogee/spectro/aspcap/dr17/synspec_rev1/allStar-dr17-synspec_rev1.fits'
-ALLVISIT = SAS + '/apogee/spectro/aspcap/dr17/synspec_rev1/allVisit-dr17-synspec_rev1.fits'
-APSTAR = SAS + '/apogee/spectro/redux/dr17/stars/{telescope}/{field}/apStar-dr17-{apogee_id}.fits'
+BASE = '/mnt/aridata1/users/arialipt'
+D = BASE + '/apogee_dr17'                     # where get_apogee.sh puts the files
+GC_VAC = D + '/VAC_GC_DR17_synspec_rev1-v1_1.fits'
+ALLSTAR = D + '/allStar-dr17-synspec_rev1.fits'
+ALLVISIT = D + '/allVisit-dr17-synspec_rev1.fits'
+APSTAR = D + '/stars/{telescope}/{field}/apStar-dr17-{apogee_id}.fits'   # filled by 'download'
+SAS_URL = 'https://data.sdss.org/sas/dr17/apogee/spectro/redux/dr17/stars/{telescope}/{field}/apStar-dr17-{apogee_id}.fits'
 
 # LSF / wavelength-solution files per telescope (directory, lsfid, waveid)
+LSF_DIR = os.environ.get('APOGEE_LSF_DIR', '/users/arialipt/turbofit/apLSF_apWave_files')
 LSF = {
-    'apo25m': dict(datadir='/data/apogee_lsf/apogee-n', lsfid='05440020', waveid='02420038'),
-    'lco25m': dict(datadir='/data/apogee_lsf/apogee-s', lsfid=None, waveid=None),   # set these
+    'apo25m': dict(datadir=LSF_DIR, lsfid='05440020', waveid='02420038'),
+    'lco25m': dict(datadir=LSF_DIR, lsfid=None, waveid=None),   # set if you use LCO stars
 }
 FIBRES = 'visits'          # 'visits' (fibres of the star's visits) or 'combo'
 
@@ -62,10 +66,10 @@ MEMB_MIN = 0.5
 SNR_MIN = 70.
 MAX_PER_CLUSTER = 20       # highest S/N first; None for all
 
-LINELISTS = ['/data/linelists/turbospec.20180901.atoms_vac',      # vacuum, like apStar
-             '/data/linelists/turbospec.20180901.molec_vac',
-             '/data/linelists/Hlinedata_vac']
-MARCS_DIR = '/data/marcs_apogee'
+LINELISTS = ['/path/to/turbospec.20180901.atoms_vac',      # TODO: your vacuum line lists
+             '/path/to/turbospec.20180901.molec_vac',
+             '/path/to/Hlinedata_vac']
+MARCS_DIR = '/path/to/marcs_apogee'                         # TODO: APOGEE MARCS (C, alpha, M nodes)
 NODES = dict(teff=(15, 3000., 250.), logg=(12, -0.5, 0.5), mh=(14, -2.5, 0.25),
              am=(7, -1.0, 0.25), cm=(11, -1.5, 0.25))
 ELEMENTS = ['C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'K', 'Ca', 'Ti', 'V',
@@ -73,8 +77,8 @@ ELEMENTS = ['C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'K', 'Ca', 'Ti', 'V',
 BROADENING = 'vmac'
 FIX_VMICRO = False         # True: hold vmicro at ASPCAP's value (diagnostic run)
 N_JOBS = 16
-CACHE = '/scratch/me/turbofit_cache'
-OUT = 'gc_test'
+CACHE = BASE + '/turbofit_cache'
+OUT = BASE + '/gc_test'
 
 # APOGEE_PIXMASK bits treated as bad
 BAD_BITS = [0, 1, 2, 3, 4, 5, 6, 9, 12]   # BADPIX CRPIX SATPIX UNFIXABLE BADDARK
@@ -132,11 +136,20 @@ def load_members():
     return vstack(sel)
 
 
+_VISITS = None
+
+
 def visit_fibres(apogee_id, telescope):
+    global _VISITS
     if FIBRES == 'combo':
         return 'combo'
-    v = Table.read(ALLVISIT, hdu=1)
-    ok = (_str(v['APOGEE_ID']) == apogee_id) & (_str(v['TELESCOPE']) == telescope)
+    if _VISITS is None:                       # read allVisit once, three columns only
+        with fits.open(ALLVISIT, memmap=True) as h:
+            d = h[1].data
+            _VISITS = Table(dict(APOGEE_ID=_str(d['APOGEE_ID']), TELESCOPE=_str(d['TELESCOPE']),
+                                 FIBERID=np.asarray(d['FIBERID'])))
+    v = _VISITS
+    ok =(_str(v['APOGEE_ID']) == apogee_id) & (_str(v['TELESCOPE']) == telescope)
     fib = sorted({int(f) for f in np.asarray(v['FIBERID'])[ok] if 1 <= int(f) <= 300})
     return fib or 'combo'
 
@@ -159,6 +172,24 @@ def read_apstar(row):
     flux[bad] = np.nan            # chip gaps become separate chunks; single pixels are skipped
     err[bad] = np.nan
     return wave, flux, err
+
+
+def download(sel):
+    """Fetch the apStar files of the selected stars (skips ones already there)."""
+    import urllib.request
+    for row in sel:
+        kw = dict(telescope=row['TELESCOPE'].strip(), field=row['FIELD'].strip(),
+                  apogee_id=row['APOGEE_ID'])
+        path = APSTAR.format(**kw)
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            continue
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            urllib.request.urlretrieve(SAS_URL.format(**kw), path + '.part')
+            os.replace(path + '.part', path)
+            print('got', path)
+        except Exception as e:
+            print('FAILED', row['APOGEE_ID'], repr(e))
 
 
 def instrument(row, wave):
@@ -374,7 +405,7 @@ def plots(t):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('what', choices=['list', 'run', 'collect'])
+    ap.add_argument('what', choices=['list', 'download', 'run', 'collect'])
     ap.add_argument('cluster', nargs='?')
     ap.add_argument('--index', type=int)
     a = ap.parse_args()
@@ -391,6 +422,9 @@ def main():
         sel = sel[sel['GC_NAME'] == a.cluster]
     if a.index is not None:
         sel = sel[a.index:a.index + 1]
+    if a.what == 'download':
+        download(sel)
+        return
     lookup = turbogrid.make_atmod_lookup(MARCS_DIR, flat=True)
     for row in sel:
         try:

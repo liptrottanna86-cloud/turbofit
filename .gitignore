@@ -23,4 +23,5 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 *.swp
-*~
+*~examples/grid_setup.sh
+examples/run_job.sh

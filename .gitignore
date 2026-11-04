@@ -1,3 +1,26 @@
 data
 __pycache__/
 *.pyc
+# not part of the package
+# not part of the package
+cnn/
+lima_linelists/
+data
+turbogrid_user_guide.pdf
+.DS_Store
+
+# outputs and logs
+*.log
+*.out
+slurm_*
+*.npz
+*.npy
+*.fits
+*.pdf
+
+# Python / editor junk
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.swp
+*~

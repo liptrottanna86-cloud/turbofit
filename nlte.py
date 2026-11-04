@@ -273,7 +273,9 @@ def prepare(cfg, teff, logg, mh, abundances, nlte_elems, workdir='.', verbose=Fa
 
     for el in elems:
         z = int(np.atleast_1d(atomic.periodic(el))[0])
-        a_x = float(abundances[z - 1]) if el.upper() not in ('H',) else 12.0
+        # rounded as synthesize() writes it (8.3f): bsyn checks that the departure
+        # coefficients were computed for exactly the abundance it uses
+        a_x = round(float(abundances[z - 1]), 3) if el.upper() not in ('H',) else 12.0
         cfgtxt = ''.join(f"'{m}'\n" for m in models)
         cfgtxt += f"'{atmod}'\n'{root}.alt'\n'{root}_{el}_coef.dat'\n"
         cfgtxt += f"'{cfg.files[el]['bin']}'\n'{cfg.files[el]['aux']}'\n"

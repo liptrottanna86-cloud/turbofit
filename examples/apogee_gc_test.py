@@ -79,7 +79,7 @@ LINELISTS = ['/users/arialipt/turbofit/aplinelists/turbospec.20180901t20.atoms',
              '/users/arialipt/turbofit/aplinelists/turbospec.20180901t20.Hlinedata',
              '/users/arialipt/turbofit/aplinelists/turbospec.20180901t20.molec']
 MARCS_DIR = '/mnt/aridata1/users/arialipt/marcs_apogee'                         # APOGEE MARCS (C, alpha, M nodes)
-LINELISTS_AIR = False      # True if the line lists are in air (apStar is vacuum): Fe I at 15207.53 = air, 15211.68 = vacuum
+LINELISTS_AIR = True    # True if the line lists are in air (apStar is vacuum): Fe I at 15207.53 = air, 15211.68 = vacuum
 TEFF_NODES = [float(t) for t in list(range(2800, 4001, 100)) + list(range(4250, 8001, 250))]
 NODES = dict(teff=TEFF_NODES, logg=(12, -0.5, 0.5), mh=(14, -2.5, 0.25),
              am=(7, -1.0, 0.25), cm=(11, -1.5, 0.25))

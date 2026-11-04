@@ -1,7 +1,5 @@
 # turbofit
 
-*Anna Liptrott, Astrophysics Research Institute, Liverpool John Moores University*
-
 > [!WARNING]
 > **Work in progress.** turbofit is under active development. Interfaces may change, and parts of it are not yet validated for science use (see [Status](#status)). Check results against an independent code before relying on them.
 
